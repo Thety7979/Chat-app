@@ -2,6 +2,7 @@ package ty.tran.demo.Entity;
 
 import java.time.Instant;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -29,7 +30,12 @@ public class CallParticipant {
     @MapsId("userId")
     private User user;
 
+    @Column(name = "joined_at")
     private Instant joinedAt;
+
+    @Column(name = "left_at")
     private Instant leftAt;
+
+    @Column(name = "rtc_session_id")
     private String rtcSessionId;
 }

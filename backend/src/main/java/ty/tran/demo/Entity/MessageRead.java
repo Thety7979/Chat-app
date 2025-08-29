@@ -1,6 +1,7 @@
 package ty.tran.demo.Entity;
 
 import java.time.Instant;
+import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 
@@ -29,5 +30,6 @@ public class MessageRead {
     @MapsId("userId")
     private User user;
 
+    @Column(name = "read_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant readAt;
 }

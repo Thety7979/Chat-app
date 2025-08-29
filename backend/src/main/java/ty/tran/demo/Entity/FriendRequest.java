@@ -3,6 +3,7 @@ package ty.tran.demo.Entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -13,10 +14,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.*;
 
 @Entity
-@Table(name = "friend_requests")
+@Table(name = "friend_requests",
+       uniqueConstraints = {
+           @UniqueConstraint(columnNames = {"sender_id", "receiver_id"})
+       })
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -36,13 +41,19 @@ public class FriendRequest {
     private User receiver;
 
     @Enumerated(EnumType.STRING)
-    private RequestStatus status = RequestStatus.PENDING;
+    @Column(name = "status", nullable = false)
+    private RequestStatus status = RequestStatus.pending;
 
+    @Column(name = "message")
     private String message;
+
+    @Column(name = "created_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant createdAt;
+
+    @Column(name = "responded_at")
     private Instant respondedAt;
 
     public enum RequestStatus {
-        PENDING, ACCEPTED, DECLINED, CANCELED
+        pending, accepted, declined, canceled
     }
 }

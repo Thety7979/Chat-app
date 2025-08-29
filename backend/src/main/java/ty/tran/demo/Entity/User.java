@@ -23,24 +23,36 @@ public class User {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    @Column(name = "username", nullable = false, unique = true)
     private String username;
 
-    @Column(unique = true)
+    @Column(name = "email", unique = true)
     private String email;
 
-    @Column(unique = true)
+    @Column(name = "phone", unique = true)
     private String phone;
 
-    @Column(nullable = false)
+    @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
+    @Column(name = "display_name")
     private String displayName;
+
+    @Column(name = "avatar_url")
     private String avatarUrl;
+
+    @Column(name = "about")
     private String about;
+
+    @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    @Column(name = "last_seen_at")
     private Instant lastSeenAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant updatedAt;
 }

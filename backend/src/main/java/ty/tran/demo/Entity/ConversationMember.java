@@ -3,6 +3,7 @@ package ty.tran.demo.Entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -33,13 +34,19 @@ public class ConversationMember {
     private User user;
 
     @Enumerated(EnumType.STRING)
-    private MemberRole role = MemberRole.MEMBER;
+    @Column(name = "role", nullable = false)
+    private MemberRole role = MemberRole.member;
 
+    @Column(name = "joined_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant joinedAt;
+
+    @Column(name = "muted_until")
     private Instant mutedUntil;
+
+    @Column(name = "last_read_message_id")
     private UUID lastReadMessageId;
 
     public enum MemberRole {
-        OWNER, ADMIN, MEMBER
+        owner, admin, member
     }
 }

@@ -3,6 +3,7 @@ package ty.tran.demo.Entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -28,19 +29,26 @@ public class Conversation {
     private UUID id;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false)
     private ConversationType type;
 
+    @Column(name = "title")
     private String title;
+
+    @Column(name = "avatar_url")
     private String avatarUrl;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private User createdBy;
 
+    @Column(name = "created_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant updatedAt;
 
     public enum ConversationType {
-        DIRECT, GROUP
+        direct, group
     }
 }

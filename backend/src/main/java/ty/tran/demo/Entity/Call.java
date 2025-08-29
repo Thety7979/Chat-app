@@ -3,6 +3,7 @@ package ty.tran.demo.Entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -28,7 +29,7 @@ public class Call {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "conversation_id")
+    @JoinColumn(name = "conversation_id", nullable = false)
     private Conversation conversation;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -36,20 +37,27 @@ public class Call {
     private User initiator;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false)
     private CallType type;
 
     @Enumerated(EnumType.STRING)
-    private CallStatus status = CallStatus.RINGING;
+    @Column(name = "status", nullable = false)
+    private CallStatus status = CallStatus.ringing;
 
+    @Column(name = "started_at")
     private Instant startedAt;
+
+    @Column(name = "ended_at")
     private Instant endedAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant createdAt;
 
     public enum CallType {
-        AUDIO, VIDEO
+        audio, video
     }
 
     public enum CallStatus {
-        RINGING, ONGOING, ENDED, MISSED, CANCELED, FAILED
+        ringing, ongoing, ended, missed, canceled, failed
     }
 }

@@ -29,7 +29,7 @@ public class Message {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "conversation_id")
+    @JoinColumn(name = "conversation_id", nullable = false)
     private Conversation conversation;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -37,23 +37,29 @@ public class Message {
     private User sender;
 
     @Enumerated(EnumType.STRING)
-    private MessageType type = MessageType.TEXT;
+    @Column(name = "type", nullable = false)
+    private MessageType type = MessageType.text;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 
-    @Column(columnDefinition = "jsonb")
-    private String metadata;
+    @Column(name = "metadata", columnDefinition = "jsonb")
+    private Object metadata;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reply_to_id")
     private Message replyTo;
 
+    @Column(name = "created_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant createdAt;
+
+    @Column(name = "edited_at")
     private Instant editedAt;
+
+    @Column(name = "deleted_at")
     private Instant deletedAt;
 
     public enum MessageType {
-        TEXT, IMAGE, FILE, CALL, SYSTEM
+        text, image, file, call, system
     }
 }

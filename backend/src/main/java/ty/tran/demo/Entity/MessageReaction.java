@@ -30,9 +30,6 @@ public class MessageReaction {
     @MapsId("userId")
     private User user;
 
-    @Column(name = "reaction", nullable = false)
-    private String reaction;
-
     @Column(name = "created_at", nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant createdAt;
 }

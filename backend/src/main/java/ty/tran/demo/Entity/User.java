@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -32,8 +34,8 @@ public class User {
     @Column(name = "phone", unique = true)
     private String phone;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
+    @Column(name = "password_hash")
+    private String passwordHash; // Nullable for OAuth2 users
 
     @Column(name = "display_name")
     private String displayName;
@@ -55,4 +57,19 @@ public class User {
 
     @Column(name = "updated_at", nullable = false, columnDefinition = "TIMESTAMPTZ DEFAULT now()")
     private Instant updatedAt;
+
+    // OAuth2 fields
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auth_provider")
+    private AuthProvider authProvider = AuthProvider.LOCAL;
+
+    @Column(name = "provider_id")
+    private String providerId; // ID from OAuth2 provider
+
+    @Column(name = "email_verified")
+    private Boolean emailVerified = false;
+
+    public enum AuthProvider {
+        LOCAL, GOOGLE, FACEBOOK
+    }
 }

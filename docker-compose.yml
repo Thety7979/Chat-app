@@ -1,0 +1,49 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chat-app-backend
+    environment:
+      DATASOURCE_URL: ${DATASOURCE_URL}
+      DATASOURCE_USERNAME: ${DATASOURCE_USERNAME}
+      DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD}
+      
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION}
+      
+      GOOGLE_OAUTH2_CLIENT_ID: ${GOOGLE_OAUTH2_CLIENT_ID}
+      GOOGLE_OAUTH2_CLIENT_SECRET: ${GOOGLE_OAUTH2_CLIENT_SECRET}
+      GOOGLE_OAUTH2_REDIRECT_URI: ${GOOGLE_OAUTH2_REDIRECT_URI}
+      
+      FACEBOOK_OAUTH2_CLIENT_ID: ${FACEBOOK_OAUTH2_CLIENT_ID}
+      FACEBOOK_OAUTH2_CLIENT_SECRET: ${FACEBOOK_OAUTH2_CLIENT_SECRET}
+      FACEBOOK_OAUTH2_REDIRECT_URI: ${FACEBOOK_OAUTH2_REDIRECT_URI}
+      
+      SERVER_PORT: ${SERVER_PORT}
+      SERVER_SERVLET_CONTEXT_PATH: ${SERVER_SERVLET_CONTEXT_PATH}
+    ports:
+      - "8080:8080"
+    networks:
+      - chat-app-network
+    volumes:
+      - ./backend/logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chat-app-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - chat-app-network
+
+networks:
+  chat-app-network:
+    driver: bridge

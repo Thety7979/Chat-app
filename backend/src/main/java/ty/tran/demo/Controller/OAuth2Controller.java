@@ -7,14 +7,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import ty.tran.demo.Service.OAuth2Service;
 import ty.tran.demo.Service.JwtService;
-import ty.tran.demo.Service.UserService;
 import ty.tran.demo.DTO.AuthResponse;
 import ty.tran.demo.DTO.UserDTO;
 import ty.tran.demo.Entity.User;
 
 import java.util.Map;
-import java.net.URLEncoder;
-import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,9 +27,6 @@ public class OAuth2Controller {
     
     @Autowired
     private JwtService jwtService;
-    
-    @Autowired
-    private UserService userService;
 
     @Value("${google.oauth2.client-id}")
     private String clientId;

@@ -31,7 +31,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 // Main app content
 const AppContent: React.FC = () => {
-  const { user, logout } = useAuth();
 
   return (
     <div className="App">
@@ -48,21 +47,7 @@ const AppContent: React.FC = () => {
           path="/chat" 
           element={
             <ProtectedRoute>
-              <div>
-                <ChatUI />
-                <div className="fixed top-4 right-4 flex gap-2 z-50">
-                  <div className="bg-white px-3 py-2 rounded-lg shadow-lg">
-                    <span className="text-sm text-gray-600">Welcome, </span>
-                    <span className="text-sm font-semibold text-primary">{user?.displayName || user?.username}</span>
-                  </div>
-                  <button 
-                    onClick={logout}
-                    className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
-                  >
-                    Logout
-                  </button>
-                </div>
-              </div>
+              <ChatUI />
             </ProtectedRoute>
           } 
         />

@@ -26,10 +26,14 @@ import lombok.*;
 public class DirectConversation {
 
     @Id
+    @Column(name = "conversation_id")
     private UUID conversationId;
 
+    @Column(name = "conversationid", nullable = false)
+    private UUID conversationid;
+
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "conversation_id")
+    @JoinColumn(name = "conversation_id", insertable = false, updatable = false)
     private Conversation conversation;
 
     @ManyToOne(fetch = FetchType.LAZY)

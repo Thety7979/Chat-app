@@ -13,13 +13,14 @@ import ty.tran.demo.Entity.User;
 
 import java.util.Map;
 import java.util.HashMap;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
 @RestController
 @RequestMapping("/oauth2")
-@CrossOrigin(origins = "*")
 public class OAuth2Controller {
 
     @Autowired
@@ -54,15 +55,17 @@ public class OAuth2Controller {
             String jwt = jwtService.generateToken(user.getEmail());
             String refreshToken = jwtService.generateRefreshToken(user.getEmail());
 
-            UserDTO userDTO = new UserDTO(
-                user.getId().toString(),
-                user.getEmail(),
-                user.getUsername(),
-                user.getDisplayName(),
-                user.getAvatarUrl() != null ? user.getAvatarUrl() : "",
-                user.getAuthProvider().toString(),
-                user.getIsActive()
-            );
+            UserDTO userDTO = UserDTO.builder()
+                .id(user.getId().toString())
+                .email(user.getEmail())
+                .username(user.getUsername())
+                .displayName(user.getDisplayName())
+                .avatarUrl(user.getAvatarUrl() != null ? user.getAvatarUrl() : "")
+                .about(user.getAbout())
+                .isActive(user.getIsActive())
+                .lastSeenAt(user.getLastSeenAt())
+                .createdAt(user.getCreatedAt())
+                .build();
             
             AuthResponse response = new AuthResponse(jwt, refreshToken, "Bearer", 86400000L, userDTO);
             
@@ -124,16 +127,19 @@ public class OAuth2Controller {
             
             // Create UserDTO
             System.out.println("Creating UserDTO...");
-            UserDTO userDTO = new UserDTO(
-                user.getId().toString(),
-                user.getEmail(),
-                user.getUsername(),
-                user.getDisplayName(),
-                user.getAvatarUrl() != null ? user.getAvatarUrl() : "",
-                user.getAuthProvider().toString(),
-                user.getIsActive()
-            );
+            UserDTO userDTO = UserDTO.builder()
+                .id(user.getId().toString())
+                .email(user.getEmail())
+                .username(user.getUsername())
+                .displayName(user.getDisplayName())
+                .avatarUrl(user.getAvatarUrl() != null ? user.getAvatarUrl() : "")
+                .about(user.getAbout())
+                .isActive(user.getIsActive())
+                .lastSeenAt(user.getLastSeenAt())
+                .createdAt(user.getCreatedAt())
+                .build();
             System.out.println("UserDTO created successfully");
+            System.out.println("UserDTO avatarUrl: " + userDTO.getAvatarUrl());
             
             // Create AuthResponse
             System.out.println("Creating AuthResponse...");
@@ -142,13 +148,17 @@ public class OAuth2Controller {
             
             // Redirect to frontend OAuth2 callback with tokens and user info
             String redirectUrl = String.format(
-                "http://localhost:3000/oauth2/callback?token=%s&refreshToken=%s&email=%s",
+                "http://localhost:3000/oauth2/callback?token=%s&refreshToken=%s&email=%s&name=%s&picture=%s",
                 response.getToken(),
                 response.getRefreshToken(),
-                userDTO.getEmail()
+                userDTO.getEmail(),
+                URLEncoder.encode(userDTO.getDisplayName(), StandardCharsets.UTF_8),
+                URLEncoder.encode(userDTO.getAvatarUrl(), StandardCharsets.UTF_8)
             );
             
             System.out.println("Redirecting to: " + redirectUrl);
+            System.out.println("UserDTO displayName: " + userDTO.getDisplayName());
+            System.out.println("UserDTO avatarUrl: " + userDTO.getAvatarUrl());
             
             return ResponseEntity.status(302)
                 .header("Location", redirectUrl)

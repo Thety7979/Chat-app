@@ -1,97 +1,186 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { UserDTO } from '../api/authApi';
+import { useChat } from '../hooks/useChat';
+import { useFriends } from '../hooks/useFriends';
+import FriendRequestModal from './FriendRequestModal';
+import AddFriendModal from './AddFriendModal';
+import FriendsList from './FriendsList';
+import chatApi from '../api/chatApi';
 import '../assets/css/ChatUI.css';
 
-interface Contact {
-  id: string;
-  name: string;
-  lastMessage: string;
-  date: string;
-  unreadCount?: number;
-  avatar: string;
-  isActive?: boolean;
-}
-
-interface Message {
-  id: string;
-  text: string;
-  time: string;
-  isOutgoing: boolean;
-}
+// Remove mock interfaces - using real types from useChat hook
 
 const ChatUI: React.FC = () => {
   const { user, logout } = useAuth();
-  const [selectedContact, setSelectedContact] = useState<string>('1');
+  const {
+    conversations,
+    currentConversation,
+    messages,
+    isLoading,
+    error,
+    isConnected,
+    typingUsers,
+    messagesEndRef,
+    sendMessage,
+    selectConversation,
+    sendTypingIndicator,
+    scrollToBottom
+  } = useChat();
+
+  const {
+    friends,
+    pendingCount,
+    loadFriends,
+    searchUsers
+  } = useFriends();
+  
   const [message, setMessage] = useState<string>('');
   const [isCalling, setIsCalling] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [activeSidebarItem, setActiveSidebarItem] = useState<string>('chats');
   const [showContactsOnMobile, setShowContactsOnMobile] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [showFriendRequestModal, setShowFriendRequestModal] = useState<boolean>(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [showMoreMenu, setShowMoreMenu] = useState<string | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const likeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const contacts: Contact[] = [
-    {
-      id: '1',
-      name: 'Huỳnh Omar',
-      lastMessage: 'Đảm bảo lúc 8 giờ tối',
-      date: '02 Thg 2',
-      unreadCount: 3,
-      avatar: 'https://storage.googleapis.com/a1aa/image/ffcf44ae-0fb9-4ee9-89be-afbe69058bdd.jpg',
-      isActive: true
-    },
-    {
-      id: '2',
-      name: 'Hali',
-      lastMessage: 'nguyên mẫu ban đầu của',
-      date: '02 Thg 2',
-      unreadCount: 1,
-      avatar: 'https://storage.googleapis.com/a1aa/image/07bfb141-f638-4047-819f-da44a1636bb8.jpg'
-    },
-    {
-      id: '3',
-      name: 'Alice Nguyễn',
-      lastMessage: 'Hãy gặp nhau vào ngày m',
-      date: '03 Thg 2',
-      avatar: 'https://storage.googleapis.com/a1aa/image/f1c54fb4-2a4f-4efc-77ff-84fd55a3c6fd.jpg'
-    },
-    {
-      id: '4',
-      name: 'Bảo Trần',
-      lastMessage: 'Kiểm tra thiết kế mới',
-      date: '03 Thg 2',
-      unreadCount: 5,
-      avatar: 'https://storage.googleapis.com/a1aa/image/5035def1-32ea-4f20-a22b-0a5c3f707ffd.jpg'
-    },
-    {
-      id: '5',
-      name: 'Lê Carol',
-      lastMessage: 'Có chuyện gì vậy',
-      date: '04 Thg 2',
-      avatar: 'https://storage.googleapis.com/a1aa/image/1d82c115-2f95-42e7-9f4a-9901a616324c.jpg'
-    },
-    {
-      id: '6',
-      name: 'Đại Kim',
-      lastMessage: 'Chào',
-      date: '04 Thg 2',
-      avatar: 'https://storage.googleapis.com/a1aa/image/d66428e2-ef89-4a26-9592-25191348531c.jpg'
+  // Handle typing indicator
+  const handleTyping = () => {
+    if (!isTyping && currentConversation) {
+      setIsTyping(true);
+      sendTypingIndicator(true);
     }
-  ];
 
-  const messages: Message[] = [
-    { id: '1', text: 'Xin chào!', time: '20:25', isOutgoing: false },
-    { id: '2', text: 'Bạn có khỏe không?', time: '20:26', isOutgoing: true },
-    { id: '3', text: 'Tốt, cảm ơn bạn!', time: '20:27', isOutgoing: false },
-    { id: '4', text: 'Bạn đã xem bản thiết kế mới chưa?', time: '20:28', isOutgoing: true },
-    { id: '5', text: 'Chưa, tôi sẽ xem sớm. Đảm bảo lúc 8 giờ tối.', time: '20:29', isOutgoing: false }
-  ];
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set new timeout to stop typing
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isTyping && currentConversation) {
+        setIsTyping(false);
+        sendTypingIndicator(false);
+      }
+    }, 1000);
+  };
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (likeTimeoutRef.current) {
+        clearTimeout(likeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Handle search
+  useEffect(() => {
+    const performSearch = async () => {
+      if (searchQuery.trim().length < 2) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        // Search friends only for now
+        const friendResults = await searchUsers(searchQuery);
+
+        // Combine results
+        const combinedResults = [
+          ...friendResults.map(friend => ({ ...friend, type: 'friend' }))
+        ];
+
+        setSearchResults(combinedResults);
+      } catch (error) {
+        console.error('Search error:', error);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const timeoutId = setTimeout(performSearch, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, searchUsers]);
+
+  // Close menus when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showMoreMenu) {
+        setShowMoreMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMoreMenu]);
 
   const handleSendMessage = () => {
-    if (message.trim()) {
-      // Add message logic here
+    if (message.trim() && currentConversation) {
+      sendMessage(message);
       setMessage('');
+      
+      // Stop typing indicator
+      if (isTyping) {
+        setIsTyping(false);
+        sendTypingIndicator(false);
+      }
     }
+  };
+
+  const handleSendLike = () => {
+    if (currentConversation) {
+      // Clear existing timeout to prevent multiple likes
+      if (likeTimeoutRef.current) {
+        clearTimeout(likeTimeoutRef.current);
+      }
+      
+      // Send like with debounce
+      likeTimeoutRef.current = setTimeout(() => {
+        sendMessage('👍');
+      }, 100);
+    }
+  };
+
+  // Handle reply to message
+  const handleReplyToMessage = (message: any) => {
+    console.log('Reply to message:', message);
+    // TODO: Implement reply functionality
+  };
+
+  // Handle reaction to message
+  const handleReactionToMessage = (message: any) => {
+    console.log('React to message:', message);
+    // TODO: Implement reaction functionality
+  };
+
+  // Handle recall message
+  const handleRecallMessage = (messageId: string) => {
+    console.log('Recall message:', messageId);
+    setShowMoreMenu(null);
+    // TODO: Implement recall functionality
+  };
+
+  // Handle forward message
+  const handleForwardMessage = (message: any) => {
+    console.log('Forward message:', message);
+    setShowMoreMenu(null);
+    // TODO: Implement forward functionality
   };
 
   const handleCall = (type: 'voice' | 'video') => {
@@ -103,11 +192,54 @@ const ChatUI: React.FC = () => {
     }, 1000);
   };
 
-  const currentContact = contacts.find(c => c.id === selectedContact);
+  const handleSearchResultClick = async (result: any) => {
+    if (result.type === 'friend') {
+      try {
+        // Create or get direct conversation with friend
+        const conversation = await chatApi.getOrCreateDirectConversation(result.id);
+        selectConversation(conversation);
+        setSearchQuery(''); // Clear search
+        setSearchResults([]);
+      } catch (error) {
+        console.error('Failed to start conversation with friend:', error);
+        alert(`Không thể bắt đầu trò chuyện với ${result.displayName || result.email}`);
+      }
+    }
+  };
+
+  // Get current contact from conversation
+  const getCurrentContact = () => {
+    if (!currentConversation) return null;
+    
+    if (currentConversation.type === 'direct') {
+      // For direct conversations, find the other user
+      const otherMember = currentConversation.members.find(member => member.userId !== user?.id);
+      return otherMember ? {
+        id: otherMember.userId,
+        name: otherMember.displayName || otherMember.username,
+        avatarUrl: otherMember.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+',
+        isActive: otherMember.isOnline
+      } : null;
+    } else {
+      // For group conversations, use conversation info
+      return {
+        id: currentConversation.id,
+        name: currentConversation.title || 'Group Chat',
+        avatarUrl: currentConversation.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+',
+        isActive: currentConversation.isOnline
+      };
+    }
+  };
+
+  const currentContact = getCurrentContact();
+
+
 
   const sidebarItems = [
     { id: 'chats', label: 'Cuộc trò chuyện', icon: 'fas fa-comments' },
-    { id: 'friends', label: 'Kết bạn', icon: 'fas fa-user-plus' },
+    { id: 'friends', label: 'Bạn bè', icon: 'fas fa-users', badge: friends.length },
+    { id: 'requests', label: 'Lời mời kết bạn', icon: 'fas fa-user-plus', badge: pendingCount },
+    { id: 'add-friend', label: 'Thêm bạn bè', icon: 'fas fa-user-plus' },
     { id: 'settings', label: 'Cài đặt', icon: 'fas fa-cog' },
     { id: 'history', label: 'Lịch sử', icon: 'fas fa-history' },
     { id: 'notifications', label: 'Thông báo', icon: 'fas fa-bell' },
@@ -115,7 +247,7 @@ const ChatUI: React.FC = () => {
   ];
 
   return (
-    <div className="chat-container bg-[#f9fafc] min-h-screen flex font-sans text-sm text-[#1a1a1a]">
+    <div className="chat-container bg-[#f9fafc] h-screen flex font-sans text-sm text-[#1a1a1a] overflow-hidden">
       {/* Mobile Overlay */}
       <AnimatePresence>
         {isMobileMenuOpen && (
@@ -162,7 +294,13 @@ const ChatUI: React.FC = () => {
             <img 
               alt="User profile" 
               className={`${isSidebarCollapsed ? 'lg:w-8 lg:h-8 w-12 h-12' : 'w-12 h-12'} rounded-full object-cover`} 
-              src={user?.avatar || 'https://via.placeholder.com/48x48/3b82f6/ffffff?text=U'} 
+              src={user?.avatarUrl ? `https://images.weserv.nl/?url=${encodeURIComponent(user.avatarUrl)}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName || user?.email || 'User')}&background=3b82f6&color=ffffff&size=48`} 
+              onError={(e) => {
+                // Fallback to generated avatar if Google avatar fails to load
+                const target = e.target as HTMLImageElement;
+                const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName || user?.email || 'User')}&background=3b82f6&color=ffffff&size=48`;
+                target.src = fallbackUrl;
+              }}
             />
             {!isSidebarCollapsed && (
               <div className="flex-1">
@@ -201,6 +339,13 @@ const ChatUI: React.FC = () => {
                 if (window.innerWidth < 1024) {
                   setIsMobileMenuOpen(false);
                 }
+                
+                // Handle friend actions
+                if (item.id === 'requests') {
+                  setShowFriendRequestModal(true);
+                } else if (item.id === 'add-friend') {
+                  setShowAddFriendModal(true);
+                }
               }}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -210,14 +355,23 @@ const ChatUI: React.FC = () => {
               title={isSidebarCollapsed ? item.label : ""}
             >
               <i className={`${item.icon} text-sm`}></i>
-              {!isSidebarCollapsed && <span className="text-sm font-medium">{item.label}</span>}
+              {!isSidebarCollapsed && (
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-sm font-medium">{item.label}</span>
+                  {item.badge && item.badge > 0 && (
+                    <span className="inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
+                      {item.badge}
+                    </span>
+                  )}
+                </div>
+              )}
             </motion.button>
           ))}
         </div>
       </motion.div>
 
       {/* Main Content Area */}
-      <div className="main-content flex-1 flex flex-col min-h-screen">
+      <div className="main-content flex-1 flex flex-col h-full overflow-hidden">
         {/* Mobile Header */}
         <div className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-[#e5e7eb]">
           <motion.button
@@ -272,55 +426,88 @@ const ChatUI: React.FC = () => {
 
                 {/* Mobile Contacts List */}
                 <div className="flex-1 overflow-y-auto">
-                  {contacts.map((contact, index) => (
-                    <motion.button
-                      key={contact.id}
-                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${
-                        selectedContact === contact.id 
-                          ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]' 
-                          : 'border-l-4 border-transparent'
-                      }`}
-                      type="button"
-                      onClick={() => {
-                        setSelectedContact(contact.id);
-                        setShowContactsOnMobile(false);
-                      }}
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.1 + index * 0.05 }}
-                      whileHover={{ x: -2 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <div className="relative">
-                        <img 
-                          alt={`Profile picture of ${contact.name}`} 
-                          className="w-10 h-10 rounded-full object-cover" 
-                          height="40" 
-                          src={contact.avatar} 
-                          width="40"
-                        />
-                        {contact.isActive && (
-                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                        )}
-                      </div>
-                      <div className="flex-1 text-left">
-                        <p className="font-extrabold text-xs text-[#1a1a1a] leading-5">
-                          {contact.name}
-                        </p>
-                        <p className="text-xs text-[#6b7280] truncate max-w-[160px]">
-                          {contact.lastMessage}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end text-[10px] text-[#9ca3af]">
-                        <span>{contact.date}</span>
-                        {contact.unreadCount && (
-                          <span className="mt-1 inline-block min-w-[18px] h-5 text-center text-white text-xs font-semibold rounded-full bg-[#3b82f6]">
-                            {contact.unreadCount}
-                          </span>
-                        )}
-                      </div>
-                    </motion.button>
-                  ))}
+                  {isLoading ? (
+                    <div className="flex justify-center items-center h-32">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3b82f6]"></div>
+                    </div>
+                  ) : conversations.length === 0 ? (
+                    <div className="flex justify-center items-center h-32 text-[#6b7280]">
+                      <p>Chưa có cuộc trò chuyện nào</p>
+                    </div>
+                  ) : (
+                    conversations.map((conversation, index) => {
+                      const otherMember = conversation.type === 'direct' 
+                        ? conversation.members.find(member => member.userId !== user?.id)
+                        : null;
+                      
+                      const displayName = conversation.type === 'direct' 
+                        ? (otherMember?.displayName || otherMember?.username || 'Unknown')
+                        : (conversation.title || 'Group Chat');
+                      
+                      const avatar = conversation.type === 'direct'
+                        ? (otherMember?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+')
+                        : (conversation.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+');
+                      
+                      const isActive = conversation.type === 'direct'
+                        ? otherMember?.isOnline
+                        : conversation.isOnline;
+                      
+                      const lastMessage = conversation.lastMessage?.content || 'Chưa có tin nhắn';
+                      const lastMessageTime = conversation.lastMessage?.createdAt 
+                        ? new Date(conversation.lastMessage.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
+                        : '';
+
+                      return (
+                        <motion.button
+                          key={conversation.id}
+                          className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${
+                            currentConversation?.id === conversation.id 
+                              ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]' 
+                              : 'border-l-4 border-transparent'
+                          }`}
+                          type="button"
+                          onClick={() => {
+                            selectConversation(conversation);
+                            setShowContactsOnMobile(false);
+                          }}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.1 + index * 0.05 }}
+                          whileHover={{ x: -2 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <div className="relative">
+                            <img 
+                              alt={`Profile picture of ${displayName}`} 
+                              className="w-10 h-10 rounded-full object-cover" 
+                              height="40" 
+                              src={avatar} 
+                              width="40"
+                            />
+                            {isActive && (
+                              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                            )}
+                          </div>
+                          <div className="flex-1 text-left">
+                            <p className="font-extrabold text-xs text-[#1a1a1a] leading-5">
+                              {displayName}
+                            </p>
+                            <p className="text-xs text-[#6b7280] truncate max-w-[160px]">
+                              {lastMessage}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end text-[10px] text-[#9ca3af]">
+                            <span>{lastMessageTime}</span>
+                            {conversation.unreadCount > 0 && (
+                              <span className="mt-1 inline-block min-w-[18px] h-5 text-center text-white text-xs font-semibold rounded-full bg-[#3b82f6]">
+                                {conversation.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                        </motion.button>
+                      );
+                    })
+                  )}
                 </div>
               </motion.div>
             </motion.div>
@@ -328,7 +515,7 @@ const ChatUI: React.FC = () => {
         </AnimatePresence>
 
         {/* Chat Area */}
-        <div className="flex-1 flex">
+        <div className="flex-1 flex h-full overflow-hidden">
           {/* Contacts Sidebar */}
           <motion.div 
             className="contacts-sidebar w-80 border-r border-[#e5e7eb] bg-white flex flex-col hidden lg:flex"
@@ -348,8 +535,10 @@ const ChatUI: React.FC = () => {
               <div className="relative">
                 <input 
                   className="w-full rounded-md border border-[#e5e7eb] bg-white py-2 pl-10 pr-3 text-xs text-[#6b7280] placeholder-[#6b7280] focus:outline-none focus:ring-1 focus:ring-[#3b82f6]" 
-                  placeholder="Tìm kiếm..." 
+                  placeholder="Tìm kiếm bạn bè hoặc cuộc trò chuyện..." 
                   type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                 />
                 <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-[#6b7280] text-xs"></i>
               </div>
@@ -357,202 +546,533 @@ const ChatUI: React.FC = () => {
 
             {/* Contact List */}
             <div className="flex-1 overflow-y-auto scrollbar-thin">
-              {contacts.map((contact, index) => (
-                <motion.button
-                  key={contact.id}
-                  className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${
-                    selectedContact === contact.id 
-                      ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]' 
-                      : 'border-l-4 border-transparent'
-                  }`}
-                  type="button"
-                  onClick={() => setSelectedContact(contact.id)}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.1 + index * 0.05 }}
-                  whileHover={{ x: 2 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="relative">
-                    <img 
-                      alt={`Profile picture of ${contact.name}`} 
-                      className="w-10 h-10 rounded-full object-cover" 
-                      height="40" 
-                      src={contact.avatar} 
-                      width="40"
-                    />
-                    {contact.isActive && (
-                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                    )}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="font-extrabold text-xs text-[#1a1a1a] leading-5">
-                      {contact.name}
-                    </p>
-                    <p className="text-xs text-[#6b7280] truncate max-w-[160px]">
-                      {contact.lastMessage}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end text-[10px] text-[#9ca3af]">
-                    <span>{contact.date}</span>
-                    {contact.unreadCount && (
-                      <span className="mt-1 inline-block min-w-[18px] h-5 text-center text-white text-xs font-semibold rounded-full bg-[#3b82f6]">
-                        {contact.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                </motion.button>
-              ))}
+              {isLoading ? (
+                <div className="flex justify-center items-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3b82f6]"></div>
+                </div>
+              ) : searchQuery.trim().length >= 2 ? (
+                // Show search results
+                <div>
+                  {isSearching ? (
+                    <div className="flex justify-center items-center h-32">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3b82f6]"></div>
+                    </div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="flex justify-center items-center h-32 text-[#6b7280]">
+                      <p>Không tìm thấy kết quả nào</p>
+                    </div>
+                  ) : (
+                    <div className="p-2">
+                      <h4 className="text-xs font-semibold text-[#6b7280] mb-2 px-2">
+                        Kết quả tìm kiếm ({searchResults.length})
+                      </h4>
+                      {searchResults.map((result, index) => (
+                        <motion.button
+                          key={`${result.type}-${result.id}`}
+                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors border-l-4 border-transparent"
+                          type="button"
+                          onClick={() => handleSearchResultClick(result)}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.1 + index * 0.05 }}
+                          whileHover={{ x: 2 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <div className="relative">
+                            <img 
+                              alt={`Profile picture of ${result.displayName || result.email}`} 
+                              className="w-10 h-10 rounded-full object-cover" 
+                              height="40" 
+                              src={result.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'} 
+                              width="40"
+                            />
+                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                          </div>
+                          <div className="flex-1 text-left">
+                            <p className="font-extrabold text-xs text-[#1a1a1a] leading-5">
+                              {result.displayName || result.email}
+                            </p>
+                            <p className="text-xs text-[#6b7280]">
+                              Bạn bè
+                            </p>
+                          </div>
+                          <div className="text-[10px] text-[#9ca3af]">
+                            <i className="fas fa-user"></i>
+                          </div>
+                        </motion.button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : conversations.length === 0 ? (
+                <div className="flex justify-center items-center h-32 text-[#6b7280]">
+                  <p>Chưa có cuộc trò chuyện nào</p>
+                </div>
+              ) : (
+                conversations.map((conversation, index) => {
+                  const otherMember = conversation.type === 'direct' 
+                    ? conversation.members.find(member => member.userId !== user?.id)
+                    : null;
+                  
+                  const displayName = conversation.type === 'direct' 
+                    ? (otherMember?.displayName || otherMember?.username || 'Unknown')
+                    : (conversation.title || 'Group Chat');
+                  
+                  const avatar = conversation.type === 'direct'
+                    ? (otherMember?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+')
+                    : (conversation.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+');
+                  
+                  const isActive = conversation.type === 'direct'
+                    ? otherMember?.isOnline
+                    : conversation.isOnline;
+                  
+                  const lastMessage = conversation.lastMessage?.content || 'Chưa có tin nhắn';
+                  const lastMessageTime = conversation.lastMessage?.createdAt 
+                    ? new Date(conversation.lastMessage.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
+                    : '';
+
+                  return (
+                    <motion.button
+                      key={conversation.id}
+                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${
+                        currentConversation?.id === conversation.id 
+                          ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]' 
+                          : 'border-l-4 border-transparent'
+                      }`}
+                      type="button"
+                      onClick={() => selectConversation(conversation)}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.1 + index * 0.05 }}
+                      whileHover={{ x: 2 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <div className="relative">
+                        <img 
+                          alt={`Profile picture of ${displayName}`} 
+                          className="w-10 h-10 rounded-full object-cover" 
+                          height="40" 
+                          src={avatar} 
+                          width="40"
+                        />
+                        {isActive && (
+                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                        )}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className="font-extrabold text-xs text-[#1a1a1a] leading-5">
+                          {displayName}
+                        </p>
+                        <p className="text-xs text-[#6b7280] truncate max-w-[160px]">
+                          {lastMessage}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end text-[10px] text-[#9ca3af]">
+                        <span>{lastMessageTime}</span>
+                        {conversation.unreadCount > 0 && (
+                          <span className="mt-1 inline-block min-w-[18px] h-5 text-center text-white text-xs font-semibold rounded-full bg-[#3b82f6]">
+                            {conversation.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                    </motion.button>
+                  );
+                })
+              )}
             </div>
           </motion.div>
 
           {/* Right Chat Area */}
-          <div className="chat-area flex-1 flex flex-col bg-white">
+          <div className="chat-area flex-1 flex flex-col bg-white h-full overflow-hidden">
             {/* Header with Call Buttons */}
             <motion.div 
-              className="flex items-center justify-between px-4 lg:px-5 py-3 border-b border-[#e5e7eb]"
+              className="flex items-center justify-between px-4 lg:px-5 py-3 border-b border-[#e5e7eb] bg-white"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
             >
               <div className="flex items-center gap-3">
-                <img 
-                  alt={`Profile picture of ${currentContact?.name}`} 
-                  className="w-10 h-10 rounded-full object-cover" 
-                  height="40" 
-                  src={currentContact?.avatar} 
-                  width="40"
-                />
-                <div>
-                  <h3 className="font-extrabold text-sm text-[#1a1a1a] leading-5">
-                    {currentContact?.name}
-                  </h3>
-                  <p className="text-xs text-[#6b7280]">Đang hoạt động</p>
-                </div>
+                {activeSidebarItem === 'friends' ? (
+                  <div className="flex items-center gap-3">
+                    <i className="fas fa-users text-2xl text-[#3b82f6]"></i>
+                    <div>
+                      <h3 className="font-extrabold text-sm text-[#1a1a1a] leading-5">
+                        Bạn bè
+                      </h3>
+                      <p className="text-xs text-[#6b7280]">{friends.length} bạn bè</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <img 
+                      alt={`Profile picture of ${currentContact?.name}`} 
+                      className="w-10 h-10 rounded-full object-cover" 
+                      height="40" 
+                      src={currentContact?.avatarUrl} 
+                      width="40"
+                    />
+                    <div>
+                      <h3 className="font-extrabold text-sm text-[#1a1a1a] leading-5">
+                        {currentContact?.name}
+                      </h3>
+                      <p className="text-xs text-[#6b7280]">Hoạt động 3 giờ trước</p>
+                    </div>
+                  </>
+                )}
               </div>
               
-              {/* Call Buttons */}
-              <div className="flex items-center gap-2">
-                <motion.button
-                  className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-300 transition-colors"
-                  onClick={() => handleCall('voice')}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  disabled={isCalling}
-                >
-                  <i className="fas fa-phone text-sm"></i>
-                </motion.button>
-                
-                <motion.button
-                  className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors"
-                  onClick={() => handleCall('video')}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  disabled={isCalling}
-                >
-                  <i className="fas fa-video text-sm"></i>
-                </motion.button>
-              </div>
+              {/* Call Buttons - Only show for conversations */}
+              {activeSidebarItem !== 'friends' && (
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    className="w-10 h-10 text-[#6b7280] hover:text-[#3b82f6] focus:outline-none transition-colors"
+                    onClick={() => handleCall('voice')}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    disabled={isCalling}
+                  >
+                    <i className="fas fa-phone text-lg"></i>
+                  </motion.button>
+                  
+                  <motion.button
+                    className="w-10 h-10 text-[#6b7280] hover:text-[#3b82f6] focus:outline-none transition-colors"
+                    onClick={() => handleCall('video')}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    disabled={isCalling}
+                  >
+                    <i className="fas fa-video text-lg"></i>
+                  </motion.button>
+                  
+                  <motion.button
+                    className="w-10 h-10 text-[#6b7280] hover:text-[#3b82f6] focus:outline-none transition-colors"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <i className="fas fa-info-circle text-lg"></i>
+                  </motion.button>
+                </div>
+              )}
             </motion.div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 lg:px-5 py-4 space-y-4">
-              {messages.map((msg, index) => (
-                <motion.div
-                  key={msg.id}
-                  className={`max-w-[80%] lg:max-w-[60%] ${msg.isOutgoing ? 'ml-auto' : ''}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 + index * 0.1 }}
-                >
-                  {msg.isOutgoing ? (
-                    <div className="bg-[#3b82f6] rounded-lg p-3 text-white text-sm leading-5">
-                      <p>{msg.text}</p>
-                      <p className="text-xs text-[#bfdbfe] mt-1">{msg.time}</p>
+            {/* Content Area */}
+            <div className="messages-container flex-1 overflow-y-auto min-h-0">
+              {activeSidebarItem === 'friends' ? (
+                <FriendsList onSelectFriend={(friend) => {
+                  // Switch back to chats view after selecting a friend
+                  setActiveSidebarItem('chats');
+                }} />
+              ) : (
+                <div className="px-4 lg:px-5 py-4 space-y-4 min-h-full">
+                  {!currentConversation ? (
+                    <div className="flex justify-center items-center h-full text-[#6b7280]">
+                      <p>Chọn một cuộc trò chuyện để bắt đầu</p>
+                    </div>
+                  ) : isLoading ? (
+                    <div className="flex justify-center items-center h-full">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3b82f6]"></div>
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div className="flex justify-center items-center h-full text-[#6b7280]">
+                      <p>Chưa có tin nhắn nào</p>
                     </div>
                   ) : (
-                    <div>
-                      <p className="text-sm text-[#1a1a1a] leading-5">{msg.text}</p>
-                      <p className="text-xs text-[#6b7280] mt-1">{msg.time}</p>
-                    </div>
+                    <>
+                      {messages.map((msg, index) => {
+                        const isOutgoing = msg.senderId === user?.id;
+                        const messageTime = new Date(msg.createdAt).toLocaleTimeString('vi-VN', { 
+                          hour: '2-digit', 
+                          minute: '2-digit',
+                          hour12: false
+                        });
+                        const fullDateTime = new Date(msg.createdAt).toLocaleString('vi-VN', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false
+                        });
+
+                        return (
+                          <motion.div
+                            key={msg.id}
+                            className={`flex items-end gap-2 mb-2 group/message ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.4 + index * 0.1 }}
+                          >
+                            {/* Avatar for incoming messages only */}
+                            {!isOutgoing && (
+                              <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                                <img 
+                                  src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'} 
+                                  alt="Avatar" 
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+
+                            {/* Container cho message bubble và action buttons */}
+                            <div className={`flex items-end gap-2 ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}>
+                              {/* Message bubble */}
+                              <div className={`max-w-[70%] ${isOutgoing ? 'ml-auto' : ''}`}>
+                                {isOutgoing ? (
+                                  <div className="bg-[#3b82f6] rounded-2xl rounded-br-md p-3 text-white group relative">
+                                    <p className="text-sm leading-5">{msg.content}</p>
+                                    {/* Tooltip on hover - bên trái cho tin nhắn của mình */}
+                                    <div className="absolute top-1/2 -left-2 transform -translate-y-1/2 -translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                      {fullDateTime}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="bg-[#f1f3f4] rounded-2xl rounded-bl-md p-3 group relative">
+                                    <p className="text-sm text-[#1a1a1a] leading-5">{msg.content}</p>
+                                    {/* Tooltip on hover - bên phải cho tin nhắn đối phương */}
+                                    <div className="absolute top-1/2 -right-2 transform -translate-y-1/2 translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                      {fullDateTime}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Action buttons - hiện khi hover bên cạnh tin nhắn */}
+                              <div className={`flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200 ${isOutgoing ? 'mr-2' : 'ml-2'}`}>
+                              {/* Reply button */}
+                              <button
+                                onClick={() => handleReplyToMessage(msg)}
+                                className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
+                                title="Trả lời"
+                              >
+                                <i className="fas fa-reply text-sm"></i>
+                              </button>
+                              
+                              {/* Reaction button */}
+                              <button
+                                onClick={() => handleReactionToMessage(msg)}
+                                className="p-1.5 text-gray-500 hover:text-yellow-500 hover:bg-yellow-50 rounded-full transition-colors"
+                                title="Cảm xúc"
+                              >
+                                <i className="fas fa-smile text-sm"></i>
+                              </button>
+                              
+                              {/* More options button */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => setShowMoreMenu(showMoreMenu === msg.id ? null : msg.id)}
+                                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+                                  title="Tùy chọn"
+                                >
+                                  <i className="fas fa-ellipsis-h text-sm"></i>
+                                </button>
+                                
+                                {/* Dropdown menu */}
+                                {showMoreMenu === msg.id && (
+                                  <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-lg border z-20 min-w-[120px]">
+                                    <div className="py-1">
+                                      {isOutgoing && (
+                                        <button
+                                          onClick={() => handleRecallMessage(msg.id)}
+                                          className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                        >
+                                          <i className="fas fa-undo text-xs"></i>
+                                          Thu hồi
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => handleForwardMessage(msg)}
+                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <i className="fas fa-share text-xs"></i>
+                                        Chuyển tiếp
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                      
+                      {/* Typing indicator */}
+                      {typingUsers.size > 0 && (
+                        <motion.div
+                          className="flex items-end gap-2 mb-2"
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                        >
+                          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                            <img 
+                              src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'} 
+                              alt="Avatar" 
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="max-w-[70%]">
+                            <div className="typing-indicator bg-[#f1f3f4] rounded-2xl rounded-bl-md p-3">
+                              <div className="typing-dot"></div>
+                              <div className="typing-dot"></div>
+                              <div className="typing-dot"></div>
+                              <span className="text-xs text-[#6b7280] ml-2">
+                                {Array.from(typingUsers).length === 1 ? 'đang nhập...' : 'đang nhập...'}
+                              </span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                      
+                      {/* Auto-scroll anchor */}
+                      <div ref={messagesEndRef} className="h-1" />
+                    </>
                   )}
-                </motion.div>
-              ))}
+                </div>
+              )}
             </div>
 
-            {/* Action Buttons */}
-            <motion.div 
-              className="flex justify-center gap-2 lg:gap-4 border-t border-[#e5e7eb] py-3 px-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-            >
-              <motion.button 
-                className="border border-[#e5e7eb] rounded-md px-3 lg:px-5 py-2 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f3f4f6] focus:outline-none transition-colors" 
-                type="button"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+            {/* Action Buttons - Only show for conversations */}
+            {activeSidebarItem !== 'friends' && (
+              <motion.div 
+                className="flex justify-center gap-2 lg:gap-4 border-t border-[#e5e7eb] py-3 px-4 flex-shrink-0"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
               >
-                Yêu cầu thăm
-              </motion.button>
-              <motion.button 
-                className="border border-[#e5e7eb] rounded-md px-3 lg:px-5 py-2 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f3f4f6] focus:outline-none transition-colors" 
-                type="button"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                Tạo đề nghị
-              </motion.button>
-            </motion.div>
+                <motion.button 
+                  className="border border-[#e5e7eb] rounded-md px-3 lg:px-5 py-2 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f3f4f6] focus:outline-none transition-colors" 
+                  type="button"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  Yêu cầu thăm
+                </motion.button>
+                <motion.button 
+                  className="border border-[#e5e7eb] rounded-md px-3 lg:px-5 py-2 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f3f4f6] focus:outline-none transition-colors" 
+                  type="button"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  Tạo đề nghị
+                </motion.button>
+              </motion.div>
+            )}
 
-            {/* Input Area */}
-            <motion.div 
-              className="flex items-center gap-2 lg:gap-3 border-t border-[#e5e7eb] px-4 lg:px-5 py-3"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 }}
-            >
-              <motion.button 
-                aria-label="Emoji" 
-                className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
-                type="button"
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
+            {/* Input Area - Only show for conversations */}
+            {activeSidebarItem !== 'friends' && (
+              <motion.div 
+                className="input-area flex items-center gap-2 lg:gap-3 border-t border-[#e5e7eb] px-4 lg:px-5 py-3 flex-shrink-0 bg-white"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.6 }}
               >
-                <i className="far fa-smile"></i>
-              </motion.button>
-              
-              <input 
-                className="flex-1 border border-[#e5e7eb] rounded-md py-2 px-3 text-sm text-[#6b7280] focus:outline-none focus:ring-1 focus:ring-[#3b82f6] transition-all" 
-                placeholder="Nhập tin nhắn..." 
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              />
-              
-              <motion.button 
-                aria-label="Attach file" 
-                className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
-                type="button"
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                <i className="fas fa-paperclip"></i>
-              </motion.button>
-              
-              <motion.button 
-                aria-label="Send message" 
-                className="bg-[#3b82f6] rounded-full w-10 h-10 flex items-center justify-center text-white text-lg hover:bg-[#2563eb] focus:outline-none transition-colors" 
-                type="button"
-                onClick={handleSendMessage}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                disabled={!message.trim()}
-              >
-                <i className="fas fa-paper-plane"></i>
-              </motion.button>
-            </motion.div>
+                {/* Left side icons */}
+                <div className="flex items-center gap-2">
+                  <motion.button 
+                    aria-label="Voice message" 
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                    type="button"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <i className="fas fa-microphone"></i>
+                  </motion.button>
+                  
+                  <motion.button 
+                    aria-label="Camera" 
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                    type="button"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <i className="fas fa-camera"></i>
+                  </motion.button>
+                  
+                  <motion.button 
+                    aria-label="Gallery" 
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                    type="button"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <i className="fas fa-images"></i>
+                  </motion.button>
+                  
+                  <motion.button 
+                    aria-label="Sticker" 
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                    type="button"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <i className="fas fa-sticker-mule"></i>
+                  </motion.button>
+                  
+                  <motion.button 
+                    aria-label="GIF" 
+                    className="text-[#6b7280] text-sm font-semibold px-2 py-1 rounded focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                    type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    GIF
+                  </motion.button>
+                </div>
+                
+                {/* Input field */}
+                <input 
+                  className="flex-1 border border-[#e5e7eb] rounded-full py-2 px-4 text-sm text-[#6b7280] focus:outline-none focus:ring-1 focus:ring-[#3b82f6] transition-all bg-[#f8f9fa]" 
+                  placeholder={currentConversation ? "Aa" : "Chọn cuộc trò chuyện để bắt đầu"} 
+                  type="text"
+                  value={message}
+                  onChange={(e) => {
+                    setMessage(e.target.value);
+                    handleTyping();
+                  }}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  disabled={!currentConversation}
+                />
+                
+                {/* Right side icons */}
+                <div className="flex items-center gap-2">
+                  <motion.button 
+                    aria-label="Emoji" 
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                    type="button"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <i className="far fa-smile"></i>
+                  </motion.button>
+                  
+                  {/* Dynamic button: Like when empty, Send when has text */}
+                  {message.trim() ? (
+                    <motion.button 
+                      aria-label="Send message" 
+                      className="bg-[#3b82f6] rounded-full w-10 h-10 flex items-center justify-center text-white text-lg hover:bg-[#2563eb] focus:outline-none transition-colors" 
+                      type="button"
+                      onClick={handleSendMessage}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <i className="fas fa-paper-plane"></i>
+                    </motion.button>
+                  ) : (
+                    <motion.button 
+                      aria-label="Send like" 
+                      className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                      type="button"
+                      onClick={handleSendLike}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                    >
+                      <i className="fas fa-thumbs-up"></i>
+                    </motion.button>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </div>
         </div>
       </div>
@@ -581,6 +1101,18 @@ const ChatUI: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Friend Request Modal */}
+      <FriendRequestModal
+        isOpen={showFriendRequestModal}
+        onClose={() => setShowFriendRequestModal(false)}
+      />
+
+      {/* Add Friend Modal */}
+      <AddFriendModal
+        isOpen={showAddFriendModal}
+        onClose={() => setShowAddFriendModal(false)}
+      />
     </div>
   );
 };

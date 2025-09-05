@@ -140,8 +140,12 @@ public class JwtService {
     public boolean isTokenValid(String token, String username) {
         try {
             String extractedUsername = extractUsername(token);
-            return username.equals(extractedUsername) && !isTokenExpired(token);
+            boolean usernameMatch = username.equals(extractedUsername);
+            boolean notExpired = !isTokenExpired(token);
+            System.out.println("DEBUG - Token validation: username=" + username + ", extracted=" + extractedUsername + ", match=" + usernameMatch + ", notExpired=" + notExpired);
+            return usernameMatch && notExpired;
         } catch (Exception e) {
+            System.out.println("DEBUG - Token validation error: " + e.getMessage());
             return false;
         }
     }
@@ -151,16 +155,21 @@ public class JwtService {
             String[] parts = token.split("\\.");
             if (parts.length == 3) {
                 String payload = new String(Base64.getDecoder().decode(parts[1]));
-                if (payload.contains("exp")) {
-                    int start = payload.indexOf("exp") + 5;
+                System.out.println("DEBUG - Checking expiration for payload: " + payload);
+                if (payload.contains("exp=")) {
+                    int start = payload.indexOf("exp=") + 4;
                     int end = payload.indexOf(",", start);
                     if (end == -1) end = payload.indexOf("}", start);
-                    long expiry = Long.parseLong(payload.substring(start, end));
-                    return System.currentTimeMillis() > expiry;
+                    String expiryStr = payload.substring(start, end);
+                    long expiry = Long.parseLong(expiryStr);
+                    long currentTime = System.currentTimeMillis();
+                    boolean expired = currentTime > expiry;
+                    System.out.println("DEBUG - Token expiry check: current=" + currentTime + ", expiry=" + expiry + ", expired=" + expired);
+                    return expired;
                 }
             }
         } catch (Exception e) {
-            // Ignore parsing errors
+            System.out.println("DEBUG - Error checking token expiration: " + e.getMessage());
         }
         return true; // Consider expired if can't parse
     }

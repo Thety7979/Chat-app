@@ -11,7 +11,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class UserDTO {
+public class SearchUserDTO {
     private String id;
     private String username;
     private String email;

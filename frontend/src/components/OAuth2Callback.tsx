@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import authApi from '../api/authApi';
+import authApi, { UserDTO } from '../api/authApi';
 
 const OAuth2Callback: React.FC = () => {
   const navigate = useNavigate();
@@ -58,16 +58,27 @@ const OAuth2Callback: React.FC = () => {
           // Set tokens in authApi
           authApi.setTokens(token, refreshToken);
           
+          // Debug: Log received parameters
+          console.log('=== OAuth2Callback Debug ===');
+          console.log('Email:', email);
+          console.log('Name:', name);
+          console.log('Picture:', picture);
+          console.log('============================');
+          
           // Use user info from URL params (provided by backend)
-          const userInfo = {
+          const userInfo: UserDTO = {
             id: 'google-user',
             email: email || '',
             username: email ? email.split('@')[0] : 'google-user',
-            displayName: email ? email.split('@')[0] : 'Google User', // Use email prefix as display name
-            avatar: '', // No picture for now
-            provider: 'GOOGLE',
-            enabled: true
+            displayName: name || (email ? email.split('@')[0] : 'Google User'), // Use name from URL params
+            avatarUrl: picture || '', // Use picture from URL params
+            about: '',
+            isActive: true,
+            lastSeenAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
           };
+          
+          console.log('Created userInfo:', userInfo);
           
           // Set user in auth context
           setUser(userInfo);

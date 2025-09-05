@@ -14,6 +14,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 @Entity
@@ -38,11 +40,13 @@ public class Message {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false)
+    @Builder.Default
     private MessageType type = MessageType.text;
 
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", columnDefinition = "jsonb")
     private Object metadata;
 

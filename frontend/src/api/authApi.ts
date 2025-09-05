@@ -27,9 +27,11 @@ export interface UserDTO {
   email: string;
   username: string;
   displayName: string;
-  avatar: string;
-  provider: string;
-  enabled: boolean;
+  avatarUrl: string;
+  about?: string;
+  isActive?: boolean;
+  lastSeenAt?: string;
+  createdAt?: string;
 }
 
 export interface RefreshTokenRequest {

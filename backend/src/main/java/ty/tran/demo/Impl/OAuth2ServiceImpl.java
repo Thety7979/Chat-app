@@ -3,18 +3,13 @@ package ty.tran.demo.Impl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.annotation.Propagation;
 import ty.tran.demo.DTO.AuthResponse;
 import ty.tran.demo.DTO.UserDTO;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Entity.User.AuthProvider;
 import ty.tran.demo.Service.JwtService;
 import ty.tran.demo.Service.OAuth2Service;
 import ty.tran.demo.Service.RefreshTokenService;
 import ty.tran.demo.Service.UserService;
-
-import java.time.Instant;
-import java.util.UUID;
 
 @Service
 public class OAuth2ServiceImpl implements OAuth2Service {
@@ -41,15 +36,17 @@ public class OAuth2ServiceImpl implements OAuth2Service {
         String jwt = jwtService.generateToken(user.getEmail());
         String refreshToken = jwtService.generateRefreshToken(user.getEmail());
 
-        UserDTO userDTO = new UserDTO(
-            user.getId().toString(),
-            user.getEmail(),
-            user.getUsername(),
-            user.getDisplayName(),
-            user.getAvatarUrl(),
-            user.getAuthProvider().name(),
-            user.getIsActive()
-        );
+        UserDTO userDTO = UserDTO.builder()
+            .id(user.getId().toString())
+            .email(user.getEmail())
+            .username(user.getUsername())
+            .displayName(user.getDisplayName())
+            .avatarUrl(user.getAvatarUrl())
+            .about(user.getAbout())
+            .isActive(user.getIsActive())
+            .lastSeenAt(user.getLastSeenAt())
+            .createdAt(user.getCreatedAt())
+            .build();
 
         refreshTokenService.saveRefreshToken(refreshToken, user);
 

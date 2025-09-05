@@ -2,7 +2,6 @@ package ty.tran.demo.Impl;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import ty.tran.demo.DTO.AuthRequest;
 import ty.tran.demo.DTO.AuthResponse;
 import ty.tran.demo.DTO.SignupRequest;
@@ -178,14 +177,16 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private UserDTO convertToDTO(User user) {
-        return new UserDTO(
-            user.getId().toString(),
-            user.getEmail(),
-            user.getUsername(),
-            user.getDisplayName(),
-            user.getAvatarUrl(),
-            user.getAuthProvider().name(),
-            user.getIsActive()
-        );
+        return UserDTO.builder()
+            .id(user.getId().toString())
+            .email(user.getEmail())
+            .username(user.getUsername())
+            .displayName(user.getDisplayName())
+            .avatarUrl(user.getAvatarUrl())
+            .about(user.getAbout())
+            .isActive(user.getIsActive())
+            .lastSeenAt(user.getLastSeenAt())
+            .createdAt(user.getCreatedAt())
+            .build();
     }
 }

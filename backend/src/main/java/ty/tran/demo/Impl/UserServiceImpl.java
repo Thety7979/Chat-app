@@ -6,7 +6,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ty.tran.demo.DAO.UserDAO;
 import ty.tran.demo.Entity.User;
 import ty.tran.demo.Service.UserService;
-import java.util.UUID;
 
 @Service
 @Transactional
@@ -56,6 +55,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public User mergeUserWithOAuth2Info(User user, String providerId, String provider, String picture) {
+        System.out.println("=== Merging User with OAuth2 Info ===");
+        System.out.println("Email: " + user.getEmail());
+        System.out.println("Provider: " + provider);
+        System.out.println("Provider ID: " + providerId);
+        System.out.println("Picture: " + picture);
+        
         // Get fresh user from database and update OAuth2 fields
         User existingUser = findByEmail(user.getEmail());
         existingUser.setProviderId(providerId);
@@ -63,7 +68,12 @@ public class UserServiceImpl implements UserService {
         existingUser.setAvatarUrl(picture);
         existingUser.setEmailVerified(true);
         existingUser.setUpdatedAt(java.time.Instant.now());
-        return userDAO.save(existingUser);
+        
+        System.out.println("Updated avatarUrl to: " + picture);
+        User savedUser = userDAO.save(existingUser);
+        System.out.println("Saved user avatarUrl: " + savedUser.getAvatarUrl());
+        
+        return savedUser;
     }
 
     @Override
@@ -73,6 +83,7 @@ public class UserServiceImpl implements UserService {
         System.out.println("Name: " + name);
         System.out.println("Provider: " + provider);
         System.out.println("Provider ID: " + providerId);
+        System.out.println("Picture: " + picture);
         
         // Generate unique username
         String baseUsername = email.split("@")[0];
@@ -107,6 +118,7 @@ public class UserServiceImpl implements UserService {
             // Use regular save instead of EntityManager to avoid transaction issues
             User savedUser = userDAO.save(newUser);
             System.out.println("User saved successfully with ID: " + savedUser.getId());
+            System.out.println("Saved user avatarUrl: " + savedUser.getAvatarUrl());
             return savedUser;
         } catch (Exception e) {
             System.out.println("Error saving user: " + e.getMessage());

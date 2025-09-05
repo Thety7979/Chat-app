@@ -3,6 +3,7 @@ import authApi, { UserDTO, LoginRequest, SignupRequest } from '../api/authApi';
 
 interface AuthContextType {
   user: UserDTO | null;
+  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
@@ -29,6 +30,7 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<UserDTO | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +46,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const response = await authApi.refreshToken(refreshToken);
           authApi.setTokens(response.token, response.refreshToken);
           setUser(response.user);
+          setToken(response.token);
         }
       } catch (error) {
         // Token is invalid, clear storage
@@ -64,6 +67,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await authApi.login(credentials);
       authApi.setTokens(response.token, response.refreshToken);
       setUser(response.user);
+      setToken(response.token);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Login failed';
       setError(errorMessage);
@@ -81,6 +85,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await authApi.signup(userData);
       authApi.setTokens(response.token, response.refreshToken);
       setUser(response.user);
+      setToken(response.token);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Signup failed';
       setError(errorMessage);
@@ -93,6 +98,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = () => {
     authApi.logout();
     setUser(null);
+    setToken(null);
     setError(null);
   };
 
@@ -106,6 +112,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
+    token,
     isAuthenticated: !!user,
     isLoading,
     login,

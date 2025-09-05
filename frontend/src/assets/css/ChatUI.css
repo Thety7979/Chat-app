@@ -64,9 +64,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
-  background: #f3f4f6;
-  border-radius: 12px;
   width: fit-content;
 }
 
@@ -115,6 +112,65 @@
 .message-bubble:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Message layout improvements */
+.message-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-container.outgoing {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.message-bubble {
+  max-width: 70%;
+  word-wrap: break-word;
+}
+
+.message-bubble.incoming {
+  background: #f1f3f4;
+  border-radius: 18px 18px 18px 4px;
+  padding: 12px;
+}
+
+.message-bubble.outgoing {
+  background: #3b82f6;
+  color: white;
+  border-radius: 18px 18px 4px 18px;
+  padding: 12px;
+}
+
+.message-content {
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.message-time {
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
+.message-time.incoming {
+  color: #6b7280;
+}
+
+.message-time.outgoing {
+  color: #bfdbfe;
+  text-align: right;
 }
 
 /* Input focus effects */
@@ -192,6 +248,42 @@
   .chat-container {
     height: 100vh;
     overflow: hidden;
+  }
+  
+  /* Fix chat area layout */
+  .chat-area {
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  /* Ensure input area stays at bottom */
+  .input-area {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    padding: 12px 20px;
+  }
+  
+  .input-area input {
+    background: #f8f9fa;
+    border: 1px solid #e5e7eb;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+  
+  .input-area input:focus {
+    background: white;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+  
+  /* Ensure messages can scroll properly on desktop */
+  .messages-container {
+    height: 100%;
+    overflow-y: auto;
   }
   
   /* Collapsed sidebar styles */
@@ -282,10 +374,44 @@
   
   .chat-area {
     width: 100%;
+    height: 100vh;
+    overflow: hidden;
   }
   
   .main-content {
     margin-left: 0;
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  /* Fix mobile input area */
+  .input-area {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    padding: 12px 16px;
+  }
+  
+  .input-area input {
+    background: #f8f9fa;
+    border: 1px solid #e5e7eb;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+  
+  .input-area input:focus {
+    background: white;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+  
+  /* Ensure messages can scroll properly on mobile */
+  .messages-container {
+    height: calc(100vh - 200px); /* Adjust based on header and input height */
+    overflow-y: auto;
   }
   
   /* Ensure mobile sidebar always shows full content */

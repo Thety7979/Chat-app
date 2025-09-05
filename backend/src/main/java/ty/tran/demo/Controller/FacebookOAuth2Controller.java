@@ -15,7 +15,6 @@ import ty.tran.demo.Service.OAuth2Service;
 
 @RestController
 @RequestMapping("/oauth2")
-@CrossOrigin(origins = "*")
 public class FacebookOAuth2Controller {
 
     @Value("${facebook.oauth2.client-id}")
@@ -70,15 +69,17 @@ public class FacebookOAuth2Controller {
             
             // Create UserDTO
             System.out.println("Creating UserDTO...");
-            UserDTO userDTO = new UserDTO(
-                user.getId().toString(),
-                user.getEmail(),
-                user.getUsername(),
-                user.getDisplayName(),
-                user.getAvatarUrl() != null ? user.getAvatarUrl() : "",
-                user.getAuthProvider().toString(),
-                user.getIsActive()
-            );
+            UserDTO userDTO = UserDTO.builder()
+                .id(user.getId().toString())
+                .email(user.getEmail())
+                .username(user.getUsername())
+                .displayName(user.getDisplayName())
+                .avatarUrl(user.getAvatarUrl() != null ? user.getAvatarUrl() : "")
+                .about(user.getAbout())
+                .isActive(user.getIsActive())
+                .lastSeenAt(user.getLastSeenAt())
+                .createdAt(user.getCreatedAt())
+                .build();
             System.out.println("UserDTO created successfully");
             
             // Create AuthResponse

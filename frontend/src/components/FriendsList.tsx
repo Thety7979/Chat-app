@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
 import { useFriends } from '../hooks/useFriends';
 import { useChat } from '../hooks/useChat';
 import chatApi from '../api/chatApi';
@@ -74,14 +73,9 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend }) => {
         </h3>
         <div className="space-y-2">
           {friends.map((friend, index) => (
-            <motion.div
+            <div
               key={friend.id}
               className="w-full flex items-center gap-3 p-3 hover:bg-[#f3f4f6] rounded-lg transition-colors text-left"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
             >
               <div className="relative">
                 <img
@@ -100,10 +94,8 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend }) => {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <motion.button
+                <button
                   className="p-2 text-[#6b7280] hover:text-[#3b82f6] transition-colors disabled:opacity-50"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
                   title="Bắt đầu trò chuyện"
                   onClick={() => handleFriendClick(friend)}
                   disabled={isStartingChat === friend.id}
@@ -113,17 +105,15 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend }) => {
                   ) : (
                     <i className="fas fa-comment text-sm"></i>
                   )}
-                </motion.button>
-                <motion.button
+                </button>
+                <button
                   className="p-2 text-[#6b7280] hover:text-[#3b82f6] transition-colors"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
                   title="Gọi thoại"
                 >
                   <i className="fas fa-phone text-sm"></i>
-                </motion.button>
+                </button>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>

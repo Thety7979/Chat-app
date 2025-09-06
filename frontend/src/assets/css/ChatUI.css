@@ -16,6 +16,23 @@
   background-color: #94a3b8;
 }
 
+/* Prevent horizontal scroll in chat area */
+.messages-container {
+  overflow-x: hidden !important;
+  overflow-y: auto;
+}
+
+.chat-area {
+  overflow-x: hidden !important;
+}
+
+/* Ensure popup menus don't cause horizontal scroll */
+.message-popup-menu {
+  max-width: 200px;
+  word-wrap: break-word;
+  white-space: nowrap;
+}
+
 /* Message animations */
 .message-enter {
   opacity: 0;

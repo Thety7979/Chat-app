@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { UserDTO } from '../api/authApi';
 import { useChat } from '../hooks/useChat';
 import { useFriends } from '../hooks/useFriends';
 import FriendRequestModal from './FriendRequestModal';
 import AddFriendModal from './AddFriendModal';
 import FriendsList from './FriendsList';
+import MessagePopupMenu from './MessagePopupMenu';
 import chatApi from '../api/chatApi';
 import '../assets/css/ChatUI.css';
-
-// Remove mock interfaces - using real types from useChat hook
 
 const ChatUI: React.FC = () => {
   const { user, logout } = useAuth();
@@ -23,6 +21,7 @@ const ChatUI: React.FC = () => {
     isConnected,
     typingUsers,
     messagesEndRef,
+    justSelectedConversation,
     sendMessage,
     selectConversation,
     sendTypingIndicator,
@@ -35,7 +34,7 @@ const ChatUI: React.FC = () => {
     loadFriends,
     searchUsers
   } = useFriends();
-  
+
   const [message, setMessage] = useState<string>('');
   const [isCalling, setIsCalling] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
@@ -52,19 +51,16 @@ const ChatUI: React.FC = () => {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const likeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Handle typing indicator
   const handleTyping = () => {
     if (!isTyping && currentConversation) {
       setIsTyping(true);
       sendTypingIndicator(true);
     }
 
-    // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set new timeout to stop typing
     typingTimeoutRef.current = setTimeout(() => {
       if (isTyping && currentConversation) {
         setIsTyping(false);
@@ -73,7 +69,6 @@ const ChatUI: React.FC = () => {
     }, 1000);
   };
 
-  // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) {
@@ -85,7 +80,6 @@ const ChatUI: React.FC = () => {
     };
   }, []);
 
-  // Handle search
   useEffect(() => {
     const performSearch = async () => {
       if (searchQuery.trim().length < 2) {
@@ -95,10 +89,8 @@ const ChatUI: React.FC = () => {
 
       setIsSearching(true);
       try {
-        // Search friends only for now
         const friendResults = await searchUsers(searchQuery);
 
-        // Combine results
         const combinedResults = [
           ...friendResults.map(friend => ({ ...friend, type: 'friend' }))
         ];
@@ -116,7 +108,6 @@ const ChatUI: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [searchQuery, searchUsers]);
 
-  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (showMoreMenu) {
@@ -130,62 +121,76 @@ const ChatUI: React.FC = () => {
     };
   }, [showMoreMenu]);
 
+  // Close popup when conversation changes
+  useEffect(() => {
+    setShowMoreMenu(null);
+  }, [currentConversation?.id]);
+
+  // Close popup when scrolling
+  useEffect(() => {
+    const handleScroll = () => {
+      if (showMoreMenu) {
+        setShowMoreMenu(null);
+      }
+    };
+
+    const messagesContainer = document.querySelector('.messages-container');
+    if (messagesContainer) {
+      messagesContainer.addEventListener('scroll', handleScroll);
+      return () => {
+        messagesContainer.removeEventListener('scroll', handleScroll);
+      };
+    }
+  }, [showMoreMenu]);
+
   const handleSendMessage = () => {
     if (message.trim() && currentConversation) {
-      sendMessage(message);
+      const messageToSend = message.trim();
+      console.log('Sending message:', messageToSend);
+
       setMessage('');
-      
-      // Stop typing indicator
+
       if (isTyping) {
         setIsTyping(false);
         sendTypingIndicator(false);
       }
+
+      sendMessage(messageToSend);
     }
   };
 
   const handleSendLike = () => {
     if (currentConversation) {
-      // Clear existing timeout to prevent multiple likes
       if (likeTimeoutRef.current) {
         clearTimeout(likeTimeoutRef.current);
       }
-      
-      // Send like with debounce
+
       likeTimeoutRef.current = setTimeout(() => {
         sendMessage('👍');
       }, 100);
     }
   };
 
-  // Handle reply to message
   const handleReplyToMessage = (message: any) => {
     console.log('Reply to message:', message);
-    // TODO: Implement reply functionality
   };
 
-  // Handle reaction to message
   const handleReactionToMessage = (message: any) => {
     console.log('React to message:', message);
-    // TODO: Implement reaction functionality
   };
 
-  // Handle recall message
   const handleRecallMessage = (messageId: string) => {
     console.log('Recall message:', messageId);
     setShowMoreMenu(null);
-    // TODO: Implement recall functionality
   };
 
-  // Handle forward message
   const handleForwardMessage = (message: any) => {
     console.log('Forward message:', message);
     setShowMoreMenu(null);
-    // TODO: Implement forward functionality
   };
 
   const handleCall = (type: 'voice' | 'video') => {
     setIsCalling(true);
-    // Simulate call
     setTimeout(() => {
       setIsCalling(false);
       alert(`${type === 'voice' ? 'Cuộc gọi thoại' : 'Cuộc gọi video'} đang được kết nối...`);
@@ -195,10 +200,9 @@ const ChatUI: React.FC = () => {
   const handleSearchResultClick = async (result: any) => {
     if (result.type === 'friend') {
       try {
-        // Create or get direct conversation with friend
         const conversation = await chatApi.getOrCreateDirectConversation(result.id);
         selectConversation(conversation);
-        setSearchQuery(''); // Clear search
+        setSearchQuery('');
         setSearchResults([]);
       } catch (error) {
         console.error('Failed to start conversation with friend:', error);
@@ -207,12 +211,10 @@ const ChatUI: React.FC = () => {
     }
   };
 
-  // Get current contact from conversation
   const getCurrentContact = () => {
     if (!currentConversation) return null;
-    
+
     if (currentConversation.type === 'direct') {
-      // For direct conversations, find the other user
       const otherMember = currentConversation.members.find(member => member.userId !== user?.id);
       return otherMember ? {
         id: otherMember.userId,
@@ -221,7 +223,6 @@ const ChatUI: React.FC = () => {
         isActive: otherMember.isOnline
       } : null;
     } else {
-      // For group conversations, use conversation info
       return {
         id: currentConversation.id,
         name: currentConversation.title || 'Group Chat',
@@ -248,7 +249,6 @@ const ChatUI: React.FC = () => {
 
   return (
     <div className="chat-container bg-[#f9fafc] h-screen flex font-sans text-sm text-[#1a1a1a] overflow-hidden">
-      {/* Mobile Overlay */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.div
@@ -261,16 +261,13 @@ const ChatUI: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Left Sidebar - User Info & Menu */}
-      <motion.div 
-        className={`user-sidebar ${isSidebarCollapsed ? 'lg:w-16 lg:collapsed' : 'w-64'} h-screen bg-white border-r border-[#e5e7eb] flex flex-col fixed lg:relative z-50 lg:z-auto transition-all duration-300 ${
-          isMobileMenuOpen ? 'open' : ''
-        }`}
+      <motion.div
+        className={`user-sidebar ${isSidebarCollapsed ? 'lg:w-16 lg:collapsed' : 'w-64'} h-screen bg-white border-r border-[#e5e7eb] flex flex-col fixed lg:relative z-50 lg:z-auto transition-all duration-300 ${isMobileMenuOpen ? 'open' : ''
+          }`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.1 }}
       >
-        {/* Toggle Button - Only show on desktop */}
         <div className="hidden lg:block p-2 border-b border-[#e5e7eb] flex justify-end">
           <motion.button
             className="p-2 text-[#6b7280] hover:text-[#3b82f6] transition-colors rounded-md hover:bg-[#f3f4f6]"
@@ -283,20 +280,18 @@ const ChatUI: React.FC = () => {
           </motion.button>
         </div>
 
-        {/* User Profile Section */}
-        <motion.div 
+        <motion.div
           className={`p-4 border-b border-[#e5e7eb] ${isSidebarCollapsed ? 'lg:px-2' : ''}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.1 }}
         >
           <div className={`flex items-center ${isSidebarCollapsed ? 'lg:justify-center' : 'gap-3'} mb-4`}>
-            <img 
-              alt="User profile" 
-              className={`${isSidebarCollapsed ? 'lg:w-8 lg:h-8 w-12 h-12' : 'w-12 h-12'} rounded-full object-cover`} 
-              src={user?.avatarUrl ? `https://images.weserv.nl/?url=${encodeURIComponent(user.avatarUrl)}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName || user?.email || 'User')}&background=3b82f6&color=ffffff&size=48`} 
+            <img
+              alt="User profile"
+              className={`${isSidebarCollapsed ? 'lg:w-8 lg:h-8 w-12 h-12' : 'w-12 h-12'} rounded-full object-cover`}
+              src={user?.avatarUrl ? `https://images.weserv.nl/?url=${encodeURIComponent(user.avatarUrl)}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName || user?.email || 'User')}&background=3b82f6&color=ffffff&size=48`}
               onError={(e) => {
-                // Fallback to generated avatar if Google avatar fails to load
                 const target = e.target as HTMLImageElement;
                 const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName || user?.email || 'User')}&background=3b82f6&color=ffffff&size=48`;
                 target.src = fallbackUrl;
@@ -323,24 +318,21 @@ const ChatUI: React.FC = () => {
           </motion.button>
         </motion.div>
 
-        {/* Sidebar Menu */}
         <div className="flex-1 overflow-y-auto">
           {sidebarItems.map((item, index) => (
             <motion.button
               key={item.id}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'lg:justify-center lg:px-2 gap-3 px-4' : 'gap-3 px-4'} py-3 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${
-                activeSidebarItem === item.id 
-                  ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc] text-[#3b82f6]' 
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'lg:justify-center lg:px-2 gap-3 px-4' : 'gap-3 px-4'} py-3 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${activeSidebarItem === item.id
+                  ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc] text-[#3b82f6]'
                   : 'border-l-4 border-transparent text-[#6b7280]'
-              }`}
+                }`}
               type="button"
               onClick={() => {
                 setActiveSidebarItem(item.id);
                 if (window.innerWidth < 1024) {
                   setIsMobileMenuOpen(false);
                 }
-                
-                // Handle friend actions
+
                 if (item.id === 'requests') {
                   setShowFriendRequestModal(true);
                 } else if (item.id === 'add-friend') {
@@ -370,9 +362,7 @@ const ChatUI: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Main Content Area */}
       <div className="main-content flex-1 flex flex-col h-full overflow-hidden">
-        {/* Mobile Header */}
         <div className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-[#e5e7eb]">
           <motion.button
             className="p-2 text-[#6b7280] hover:text-[#3b82f6] transition-colors"
@@ -393,7 +383,6 @@ const ChatUI: React.FC = () => {
           </motion.button>
         </div>
 
-        {/* Mobile Contacts Overlay */}
         <AnimatePresence>
           {showContactsOnMobile && (
             <motion.div
@@ -411,7 +400,6 @@ const ChatUI: React.FC = () => {
                 transition={{ duration: 0.3 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Mobile Contacts Header */}
                 <div className="p-4 border-b border-[#e5e7eb] flex items-center justify-between">
                   <h2 className="font-extrabold text-[#1a1a1a] text-base">Cuộc trò chuyện</h2>
                   <motion.button
@@ -424,7 +412,6 @@ const ChatUI: React.FC = () => {
                   </motion.button>
                 </div>
 
-                {/* Mobile Contacts List */}
                 <div className="flex-1 overflow-y-auto">
                   {isLoading ? (
                     <div className="flex justify-center items-center h-32">
@@ -436,35 +423,34 @@ const ChatUI: React.FC = () => {
                     </div>
                   ) : (
                     conversations.map((conversation, index) => {
-                      const otherMember = conversation.type === 'direct' 
+                      const otherMember = conversation.type === 'direct'
                         ? conversation.members.find(member => member.userId !== user?.id)
                         : null;
-                      
-                      const displayName = conversation.type === 'direct' 
+
+                      const displayName = conversation.type === 'direct'
                         ? (otherMember?.displayName || otherMember?.username || 'Unknown')
                         : (conversation.title || 'Group Chat');
-                      
+
                       const avatar = conversation.type === 'direct'
                         ? (otherMember?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+')
                         : (conversation.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+');
-                      
+
                       const isActive = conversation.type === 'direct'
                         ? otherMember?.isOnline
                         : conversation.isOnline;
-                      
+
                       const lastMessage = conversation.lastMessage?.content || 'Chưa có tin nhắn';
-                      const lastMessageTime = conversation.lastMessage?.createdAt 
+                      const lastMessageTime = conversation.lastMessage?.createdAt
                         ? new Date(conversation.lastMessage.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
                         : '';
 
                       return (
                         <motion.button
                           key={conversation.id}
-                          className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${
-                            currentConversation?.id === conversation.id 
-                              ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]' 
+                          className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${currentConversation?.id === conversation.id
+                              ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]'
                               : 'border-l-4 border-transparent'
-                          }`}
+                            }`}
                           type="button"
                           onClick={() => {
                             selectConversation(conversation);
@@ -477,11 +463,11 @@ const ChatUI: React.FC = () => {
                           whileTap={{ scale: 0.98 }}
                         >
                           <div className="relative">
-                            <img 
-                              alt={`Profile picture of ${displayName}`} 
-                              className="w-10 h-10 rounded-full object-cover" 
-                              height="40" 
-                              src={avatar} 
+                            <img
+                              alt={`Profile picture of ${displayName}`}
+                              className="w-10 h-10 rounded-full object-cover"
+                              height="40"
+                              src={avatar}
                               width="40"
                             />
                             {isActive && (
@@ -514,28 +500,24 @@ const ChatUI: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* Chat Area */}
         <div className="flex-1 flex h-full overflow-hidden">
-          {/* Contacts Sidebar */}
-          <motion.div 
+          <motion.div
             className="contacts-sidebar w-80 border-r border-[#e5e7eb] bg-white flex flex-col hidden lg:flex"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
           >
-            {/* Header */}
             <div className="p-4 border-b border-[#e5e7eb]">
               <h2 className="font-extrabold text-[#1a1a1a] text-base leading-5">
                 Cuộc trò chuyện
               </h2>
             </div>
 
-            {/* Search */}
             <div className="p-3 border-b border-[#e5e7eb]">
               <div className="relative">
-                <input 
-                  className="w-full rounded-md border border-[#e5e7eb] bg-white py-2 pl-10 pr-3 text-xs text-[#6b7280] placeholder-[#6b7280] focus:outline-none focus:ring-1 focus:ring-[#3b82f6]" 
-                  placeholder="Tìm kiếm bạn bè hoặc cuộc trò chuyện..." 
+                <input
+                  className="w-full rounded-md border border-[#e5e7eb] bg-white py-2 pl-10 pr-3 text-xs text-[#6b7280] placeholder-[#6b7280] focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+                  placeholder="Tìm kiếm bạn bè hoặc cuộc trò chuyện..."
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -544,14 +526,12 @@ const ChatUI: React.FC = () => {
               </div>
             </div>
 
-            {/* Contact List */}
             <div className="flex-1 overflow-y-auto scrollbar-thin">
               {isLoading ? (
                 <div className="flex justify-center items-center h-32">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3b82f6]"></div>
                 </div>
               ) : searchQuery.trim().length >= 2 ? (
-                // Show search results
                 <div>
                   {isSearching ? (
                     <div className="flex justify-center items-center h-32">
@@ -579,11 +559,11 @@ const ChatUI: React.FC = () => {
                           whileTap={{ scale: 0.98 }}
                         >
                           <div className="relative">
-                            <img 
-                              alt={`Profile picture of ${result.displayName || result.email}`} 
-                              className="w-10 h-10 rounded-full object-cover" 
-                              height="40" 
-                              src={result.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'} 
+                            <img
+                              alt={`Profile picture of ${result.displayName || result.email}`}
+                              className="w-10 h-10 rounded-full object-cover"
+                              height="40"
+                              src={result.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'}
                               width="40"
                             />
                             <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
@@ -610,35 +590,34 @@ const ChatUI: React.FC = () => {
                 </div>
               ) : (
                 conversations.map((conversation, index) => {
-                  const otherMember = conversation.type === 'direct' 
+                  const otherMember = conversation.type === 'direct'
                     ? conversation.members.find(member => member.userId !== user?.id)
                     : null;
-                  
-                  const displayName = conversation.type === 'direct' 
+
+                  const displayName = conversation.type === 'direct'
                     ? (otherMember?.displayName || otherMember?.username || 'Unknown')
                     : (conversation.title || 'Group Chat');
-                  
+
                   const avatar = conversation.type === 'direct'
                     ? (otherMember?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+')
                     : (conversation.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+');
-                  
+
                   const isActive = conversation.type === 'direct'
                     ? otherMember?.isOnline
                     : conversation.isOnline;
-                  
+
                   const lastMessage = conversation.lastMessage?.content || 'Chưa có tin nhắn';
-                  const lastMessageTime = conversation.lastMessage?.createdAt 
+                  const lastMessageTime = conversation.lastMessage?.createdAt
                     ? new Date(conversation.lastMessage.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
                     : '';
 
                   return (
                     <motion.button
                       key={conversation.id}
-                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${
-                        currentConversation?.id === conversation.id 
-                          ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]' 
+                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#f3f4f6] focus:outline-none transition-colors ${currentConversation?.id === conversation.id
+                          ? 'border-l-4 border-[#3b82f6] bg-[#f9fafc]'
                           : 'border-l-4 border-transparent'
-                      }`}
+                        }`}
                       type="button"
                       onClick={() => selectConversation(conversation)}
                       initial={{ opacity: 0, x: -20 }}
@@ -648,11 +627,11 @@ const ChatUI: React.FC = () => {
                       whileTap={{ scale: 0.98 }}
                     >
                       <div className="relative">
-                        <img 
-                          alt={`Profile picture of ${displayName}`} 
-                          className="w-10 h-10 rounded-full object-cover" 
-                          height="40" 
-                          src={avatar} 
+                        <img
+                          alt={`Profile picture of ${displayName}`}
+                          className="w-10 h-10 rounded-full object-cover"
+                          height="40"
+                          src={avatar}
                           width="40"
                         />
                         {isActive && (
@@ -682,10 +661,8 @@ const ChatUI: React.FC = () => {
             </div>
           </motion.div>
 
-          {/* Right Chat Area */}
           <div className="chat-area flex-1 flex flex-col bg-white h-full overflow-hidden">
-            {/* Header with Call Buttons */}
-            <motion.div 
+            <motion.div
               className="flex items-center justify-between px-4 lg:px-5 py-3 border-b border-[#e5e7eb] bg-white"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -704,11 +681,11 @@ const ChatUI: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    <img 
-                      alt={`Profile picture of ${currentContact?.name}`} 
-                      className="w-10 h-10 rounded-full object-cover" 
-                      height="40" 
-                      src={currentContact?.avatarUrl} 
+                    <img
+                      alt={`Profile picture of ${currentContact?.name}`}
+                      className="w-10 h-10 rounded-full object-cover"
+                      height="40"
+                      src={currentContact?.avatarUrl}
                       width="40"
                     />
                     <div>
@@ -720,8 +697,7 @@ const ChatUI: React.FC = () => {
                   </>
                 )}
               </div>
-              
-              {/* Call Buttons - Only show for conversations */}
+
               {activeSidebarItem !== 'friends' && (
                 <div className="flex items-center gap-2">
                   <motion.button
@@ -733,7 +709,7 @@ const ChatUI: React.FC = () => {
                   >
                     <i className="fas fa-phone text-lg"></i>
                   </motion.button>
-                  
+
                   <motion.button
                     className="w-10 h-10 text-[#6b7280] hover:text-[#3b82f6] focus:outline-none transition-colors"
                     onClick={() => handleCall('video')}
@@ -743,7 +719,7 @@ const ChatUI: React.FC = () => {
                   >
                     <i className="fas fa-video text-lg"></i>
                   </motion.button>
-                  
+
                   <motion.button
                     className="w-10 h-10 text-[#6b7280] hover:text-[#3b82f6] focus:outline-none transition-colors"
                     whileHover={{ scale: 1.05 }}
@@ -755,11 +731,9 @@ const ChatUI: React.FC = () => {
               )}
             </motion.div>
 
-            {/* Content Area */}
             <div className="messages-container flex-1 overflow-y-auto min-h-0">
               {activeSidebarItem === 'friends' ? (
                 <FriendsList onSelectFriend={(friend) => {
-                  // Switch back to chats view after selecting a friend
                   setActiveSidebarItem('chats');
                 }} />
               ) : (
@@ -768,7 +742,7 @@ const ChatUI: React.FC = () => {
                     <div className="flex justify-center items-center h-full text-[#6b7280]">
                       <p>Chọn một cuộc trò chuyện để bắt đầu</p>
                     </div>
-                  ) : isLoading ? (
+                  ) : isLoading && messages.length === 0 ? (
                     <div className="flex justify-center items-center h-full">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3b82f6]"></div>
                     </div>
@@ -780,8 +754,8 @@ const ChatUI: React.FC = () => {
                     <>
                       {messages.map((msg, index) => {
                         const isOutgoing = msg.senderId === user?.id;
-                        const messageTime = new Date(msg.createdAt).toLocaleTimeString('vi-VN', { 
-                          hour: '2-digit', 
+                        const messageTime = new Date(msg.createdAt).toLocaleTimeString('vi-VN', {
+                          hour: '2-digit',
                           minute: '2-digit',
                           hour12: false
                         });
@@ -795,33 +769,45 @@ const ChatUI: React.FC = () => {
                           hour12: false
                         });
 
-                        return (
-                          <motion.div
-                            key={msg.id}
-                            className={`flex items-end gap-2 mb-2 group/message ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.4 + index * 0.1 }}
-                          >
-                            {/* Avatar for incoming messages only */}
+                        const isOptimisticMessage = msg.id.startsWith('temp-');
+                        const isNewMessage = index === messages.length - 1;
+                        const isFromCache = !isLoading;
+                        const shouldDisableAnimation = isOptimisticMessage || isNewMessage || isFromCache || justSelectedConversation;
+
+                          return (
+                            <motion.div
+                              key={msg.id}
+                              className={`flex items-end gap-2 mb-2 group/message ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}
+                              initial={shouldDisableAnimation ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={shouldDisableAnimation ? { duration: 0 } : { delay: 0.4 + index * 0.1 }}
+                              onMouseEnter={() => {
+                                // Close popup when hovering over a different message
+                                if (showMoreMenu && showMoreMenu !== msg.id) {
+                                  setShowMoreMenu(null);
+                                }
+                              }}
+                            >
                             {!isOutgoing && (
                               <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                                <img 
-                                  src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'} 
-                                  alt="Avatar" 
+                                <img
+                                  src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'}
+                                  alt="Avatar"
                                   className="w-full h-full object-cover"
                                 />
                               </div>
                             )}
 
-                            {/* Container cho message bubble và action buttons */}
                             <div className={`flex items-end gap-2 ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}>
-                              {/* Message bubble */}
                               <div className={`max-w-[70%] ${isOutgoing ? 'ml-auto' : ''}`}>
                                 {isOutgoing ? (
-                                  <div className="bg-[#3b82f6] rounded-2xl rounded-br-md p-3 text-white group relative">
+                                  <div className={`bg-[#3b82f6] rounded-2xl rounded-br-md p-3 text-white group relative ${isOptimisticMessage ? 'opacity-80' : ''}`}>
                                     <p className="text-sm leading-5">{msg.content}</p>
-                                    {/* Tooltip on hover - bên trái cho tin nhắn của mình */}
+                                    {isOptimisticMessage && (
+                                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white/30 rounded-full flex items-center justify-center">
+                                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
+                                      </div>
+                                    )}
                                     <div className="absolute top-1/2 -left-2 transform -translate-y-1/2 -translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
                                       {fullDateTime}
                                     </div>
@@ -829,7 +815,6 @@ const ChatUI: React.FC = () => {
                                 ) : (
                                   <div className="bg-[#f1f3f4] rounded-2xl rounded-bl-md p-3 group relative">
                                     <p className="text-sm text-[#1a1a1a] leading-5">{msg.content}</p>
-                                    {/* Tooltip on hover - bên phải cho tin nhắn đối phương */}
                                     <div className="absolute top-1/2 -right-2 transform -translate-y-1/2 translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
                                       {fullDateTime}
                                     </div>
@@ -837,67 +822,58 @@ const ChatUI: React.FC = () => {
                                 )}
                               </div>
 
-                              {/* Action buttons - hiện khi hover bên cạnh tin nhắn */}
                               <div className={`flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200 ${isOutgoing ? 'mr-2' : 'ml-2'}`}>
-                              {/* Reply button */}
-                              <button
-                                onClick={() => handleReplyToMessage(msg)}
-                                className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
-                                title="Trả lời"
-                              >
-                                <i className="fas fa-reply text-sm"></i>
-                              </button>
-                              
-                              {/* Reaction button */}
-                              <button
-                                onClick={() => handleReactionToMessage(msg)}
-                                className="p-1.5 text-gray-500 hover:text-yellow-500 hover:bg-yellow-50 rounded-full transition-colors"
-                                title="Cảm xúc"
-                              >
-                                <i className="fas fa-smile text-sm"></i>
-                              </button>
-                              
-                              {/* More options button */}
-                              <div className="relative">
                                 <button
-                                  onClick={() => setShowMoreMenu(showMoreMenu === msg.id ? null : msg.id)}
-                                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
-                                  title="Tùy chọn"
+                                  onClick={() => handleReplyToMessage(msg)}
+                                  className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
+                                  title="Trả lời"
                                 >
-                                  <i className="fas fa-ellipsis-h text-sm"></i>
+                                  <i className="fas fa-reply text-sm"></i>
                                 </button>
-                                
-                                {/* Dropdown menu */}
-                                {showMoreMenu === msg.id && (
-                                  <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-lg border z-20 min-w-[120px]">
-                                    <div className="py-1">
-                                      {isOutgoing && (
-                                        <button
-                                          onClick={() => handleRecallMessage(msg.id)}
-                                          className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                        >
-                                          <i className="fas fa-undo text-xs"></i>
-                                          Thu hồi
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={() => handleForwardMessage(msg)}
-                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                      >
-                                        <i className="fas fa-share text-xs"></i>
-                                        Chuyển tiếp
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
+
+                                <button
+                                  onClick={() => handleReactionToMessage(msg)}
+                                  className="p-1.5 text-gray-500 hover:text-yellow-500 hover:bg-yellow-50 rounded-full transition-colors"
+                                  title="Cảm xúc"
+                                >
+                                  <i className="fas fa-smile text-sm"></i>
+                                </button>
+
+                                <div className="relative">
+                                  <button
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      // Simple toggle logic
+                                      if (showMoreMenu === msg.id) {
+                                        setShowMoreMenu(null);
+                                      } else {
+                                        setShowMoreMenu(msg.id);
+                                      }
+                                    }}
+                                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+                                    title="Tùy chọn"
+                                  >
+                                    <i className="fas fa-ellipsis-h text-sm"></i>
+                                  </button>
+
+                                  <MessagePopupMenu
+                                    isOpen={showMoreMenu === msg.id}
+                                    onClose={() => setShowMoreMenu(null)}
+                                    onRecall={() => handleRecallMessage(msg.id)}
+                                    onForward={() => handleForwardMessage(msg)}
+                                    onReply={() => handleReplyToMessage(msg)}
+                                    onReact={() => handleReactionToMessage(msg)}
+                                    isOutgoing={isOutgoing}
+                                    position={isOutgoing ? 'right' : 'left'}
+                                  />
+                                </div>
                               </div>
-                            </div>
                             </div>
                           </motion.div>
                         );
                       })}
-                      
-                      {/* Typing indicator */}
+
                       {typingUsers.size > 0 && (
                         <motion.div
                           className="flex items-end gap-2 mb-2"
@@ -905,9 +881,9 @@ const ChatUI: React.FC = () => {
                           animate={{ opacity: 1, y: 0 }}
                         >
                           <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                            <img 
-                              src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'} 
-                              alt="Avatar" 
+                            <img
+                              src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'}
+                              alt="Avatar"
                               className="w-full h-full object-cover"
                             />
                           </div>
@@ -923,8 +899,13 @@ const ChatUI: React.FC = () => {
                           </div>
                         </motion.div>
                       )}
-                      
-                      {/* Auto-scroll anchor */}
+
+                      {isLoading && messages.length > 0 && (
+                        <div className="flex justify-center py-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#3b82f6]"></div>
+                        </div>
+                      )}
+
                       <div ref={messagesEndRef} className="h-1" />
                     </>
                   )}
@@ -932,86 +913,57 @@ const ChatUI: React.FC = () => {
               )}
             </div>
 
-            {/* Action Buttons - Only show for conversations */}
             {activeSidebarItem !== 'friends' && (
-              <motion.div 
-                className="flex justify-center gap-2 lg:gap-4 border-t border-[#e5e7eb] py-3 px-4 flex-shrink-0"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-              >
-                <motion.button 
-                  className="border border-[#e5e7eb] rounded-md px-3 lg:px-5 py-2 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f3f4f6] focus:outline-none transition-colors" 
-                  type="button"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  Yêu cầu thăm
-                </motion.button>
-                <motion.button 
-                  className="border border-[#e5e7eb] rounded-md px-3 lg:px-5 py-2 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f3f4f6] focus:outline-none transition-colors" 
-                  type="button"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  Tạo đề nghị
-                </motion.button>
-              </motion.div>
-            )}
-
-            {/* Input Area - Only show for conversations */}
-            {activeSidebarItem !== 'friends' && (
-              <motion.div 
+              <motion.div
                 className="input-area flex items-center gap-2 lg:gap-3 border-t border-[#e5e7eb] px-4 lg:px-5 py-3 flex-shrink-0 bg-white"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.6 }}
               >
-                {/* Left side icons */}
                 <div className="flex items-center gap-2">
-                  <motion.button 
-                    aria-label="Voice message" 
-                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                  <motion.button
+                    aria-label="Voice message"
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors"
                     type="button"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                   >
                     <i className="fas fa-microphone"></i>
                   </motion.button>
-                  
-                  <motion.button 
-                    aria-label="Camera" 
-                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+
+                  <motion.button
+                    aria-label="Camera"
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors"
                     type="button"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                   >
                     <i className="fas fa-camera"></i>
                   </motion.button>
-                  
-                  <motion.button 
-                    aria-label="Gallery" 
-                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+
+                  <motion.button
+                    aria-label="Gallery"
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors"
                     type="button"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                   >
                     <i className="fas fa-images"></i>
                   </motion.button>
-                  
-                  <motion.button 
-                    aria-label="Sticker" 
-                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+
+                  <motion.button
+                    aria-label="Sticker"
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors"
                     type="button"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                   >
                     <i className="fas fa-sticker-mule"></i>
                   </motion.button>
-                  
-                  <motion.button 
-                    aria-label="GIF" 
-                    className="text-[#6b7280] text-sm font-semibold px-2 py-1 rounded focus:outline-none hover:text-[#3b82f6] transition-colors" 
+
+                  <motion.button
+                    aria-label="GIF"
+                    className="text-[#6b7280] text-sm font-semibold px-2 py-1 rounded focus:outline-none hover:text-[#3b82f6] transition-colors"
                     type="button"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -1019,11 +971,10 @@ const ChatUI: React.FC = () => {
                     GIF
                   </motion.button>
                 </div>
-                
-                {/* Input field */}
-                <input 
-                  className="flex-1 border border-[#e5e7eb] rounded-full py-2 px-4 text-sm text-[#6b7280] focus:outline-none focus:ring-1 focus:ring-[#3b82f6] transition-all bg-[#f8f9fa]" 
-                  placeholder={currentConversation ? "Aa" : "Chọn cuộc trò chuyện để bắt đầu"} 
+
+                <input
+                  className="flex-1 border border-[#e5e7eb] rounded-full py-2 px-4 text-sm text-[#6b7280] focus:outline-none focus:ring-1 focus:ring-[#3b82f6] transition-all bg-[#f8f9fa]"
+                  placeholder={currentConversation ? "Aa" : "Chọn cuộc trò chuyện để bắt đầu"}
                   type="text"
                   value={message}
                   onChange={(e) => {
@@ -1033,24 +984,22 @@ const ChatUI: React.FC = () => {
                   onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                   disabled={!currentConversation}
                 />
-                
-                {/* Right side icons */}
+
                 <div className="flex items-center gap-2">
-                  <motion.button 
-                    aria-label="Emoji" 
-                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                  <motion.button
+                    aria-label="Emoji"
+                    className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors"
                     type="button"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                   >
                     <i className="far fa-smile"></i>
                   </motion.button>
-                  
-                  {/* Dynamic button: Like when empty, Send when has text */}
+
                   {message.trim() ? (
-                    <motion.button 
-                      aria-label="Send message" 
-                      className="bg-[#3b82f6] rounded-full w-10 h-10 flex items-center justify-center text-white text-lg hover:bg-[#2563eb] focus:outline-none transition-colors" 
+                    <motion.button
+                      aria-label="Send message"
+                      className="bg-[#3b82f6] rounded-full w-10 h-10 flex items-center justify-center text-white text-lg hover:bg-[#2563eb] focus:outline-none transition-colors"
                       type="button"
                       onClick={handleSendMessage}
                       whileHover={{ scale: 1.05 }}
@@ -1059,9 +1008,9 @@ const ChatUI: React.FC = () => {
                       <i className="fas fa-paper-plane"></i>
                     </motion.button>
                   ) : (
-                    <motion.button 
-                      aria-label="Send like" 
-                      className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors" 
+                    <motion.button
+                      aria-label="Send like"
+                      className="text-[#6b7280] text-lg focus:outline-none hover:text-[#3b82f6] transition-colors"
                       type="button"
                       onClick={handleSendLike}
                       whileHover={{ scale: 1.1 }}
@@ -1077,7 +1026,6 @@ const ChatUI: React.FC = () => {
         </div>
       </div>
 
-      {/* Calling Overlay */}
       <AnimatePresence>
         {isCalling && (
           <motion.div
@@ -1102,13 +1050,11 @@ const ChatUI: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Friend Request Modal */}
       <FriendRequestModal
         isOpen={showFriendRequestModal}
         onClose={() => setShowFriendRequestModal(false)}
       />
 
-      {/* Add Friend Modal */}
       <AddFriendModal
         isOpen={showAddFriendModal}
         onClose={() => setShowAddFriendModal(false)}

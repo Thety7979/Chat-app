@@ -15,10 +15,13 @@ export const useChat = () => {
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom
+  const messagesCache = useRef<Map<string, Message[]>>(new Map());
+
+  const [justSelectedConversation, setJustSelectedConversation] = useState<boolean>(false);
+
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ 
+      messagesEndRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'end',
         inline: 'nearest'
@@ -26,7 +29,6 @@ export const useChat = () => {
     }
   }, []);
 
-  // Initialize WebSocket connection
   useEffect(() => {
     if (user?.id) {
       websocketService.connect(user.id, token || undefined)
@@ -46,7 +48,6 @@ export const useChat = () => {
     };
   }, [user?.id, token]);
 
-  // Load conversations
   const loadConversations = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -60,17 +61,27 @@ export const useChat = () => {
     }
   }, []);
 
-  // Load messages for a conversation
   const loadMessages = useCallback(async (conversationId: string, page: number = 0) => {
     try {
+      const cachedMessages = messagesCache.current.get(conversationId);
+      if (cachedMessages && page === 0) {
+        console.log('Loading messages from cache:', conversationId);
+        setMessages(cachedMessages);
+        setTimeout(() => scrollToBottom(), 50);
+      }
+
       setIsLoading(true);
       const data = await chatApi.getMessages(conversationId, page);
+      const newMessages = data.content || [];
+
       if (page === 0) {
-        setMessages(data.content || []);
-        // Scroll to bottom after loading messages
+        setMessages(newMessages);
+        messagesCache.current.set(conversationId, newMessages);
         setTimeout(() => scrollToBottom(), 100);
       } else {
-        setMessages(prev => [...(data.content || []), ...prev]);
+        setMessages(prev => [...newMessages, ...prev]);
+        const currentCached = messagesCache.current.get(conversationId) || [];
+        messagesCache.current.set(conversationId, [...newMessages, ...currentCached]);
       }
     } catch (error) {
       console.error('Failed to load messages:', error);
@@ -80,30 +91,96 @@ export const useChat = () => {
     }
   }, [scrollToBottom]);
 
-  // Send message
   const sendMessage = useCallback(async (content: string, type: MessageType = MessageType.TEXT, replyToId: string | null = null) => {
-    if (!currentConversation || !content.trim()) return;
+    if (!currentConversation || !content.trim() || !user) return;
+
+    const trimmedContent = content.trim();
+
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const optimisticMessage: Message = {
+      id: tempId,
+      conversationId: currentConversation.id,
+      senderId: user.id,
+      senderUsername: user.username || user.email,
+      senderDisplayName: user.displayName || user.email,
+      senderAvatarUrl: user.avatarUrl,
+      type,
+      content: trimmedContent,
+      metadata: { isOptimistic: true, isSending: true },
+      replyToId: replyToId || undefined,
+      createdAt: new Date().toISOString(),
+      editedAt: undefined,
+      deletedAt: undefined,
+      attachments: [],
+      isRead: false,
+      readAt: undefined,
+      unreadCount: 0
+    };
+
+    console.log('Adding optimistic message immediately:', optimisticMessage.content);
+    setMessages(prev => {
+      const newMessages = [...prev, optimisticMessage];
+      console.log('New messages array length:', newMessages.length);
+
+      if (currentConversation) {
+        messagesCache.current.set(currentConversation.id, newMessages);
+      }
+
+      return newMessages;
+    });
+
+    setConversations(prev => {
+      const updatedConversations = prev.map(conv => {
+        if (conv.id === currentConversation.id) {
+          return {
+            ...conv,
+            lastMessage: optimisticMessage,
+            updatedAt: optimisticMessage.createdAt
+          };
+        }
+        return conv;
+      });
+
+      return updatedConversations.sort((a, b) => {
+        const aTime = new Date(a.updatedAt || a.lastMessage?.createdAt || 0).getTime();
+        const bTime = new Date(b.updatedAt || b.lastMessage?.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
+    });
+
+    scrollToBottom();
+    requestAnimationFrame(() => scrollToBottom());
+    setTimeout(() => scrollToBottom(), 0);
+    setTimeout(() => scrollToBottom(), 10);
 
     try {
       const messageRequest = {
         conversationId: currentConversation.id,
         type,
-        content: content.trim(),
+        content: trimmedContent,
         replyToId: replyToId || undefined
       };
 
-      // Send via WebSocket only (REST API is handled by backend)
-      websocketService.sendMessage(currentConversation.id, messageRequest);
-      
-      // Scroll to bottom after sending
-      setTimeout(() => scrollToBottom(), 100);
+      if (isConnected) {
+        websocketService.sendMessage(currentConversation.id, messageRequest);
+      } else {
+        console.warn('WebSocket not connected, trying REST API fallback...');
+        try {
+          await chatApi.sendMessage(messageRequest);
+        } catch (restError) {
+          console.error('REST API fallback failed:', restError);
+          throw restError;
+        }
+      }
+
     } catch (error) {
       console.error('Failed to send message:', error);
       setError((error as Error)?.message || 'Unknown error');
-    }
-  }, [currentConversation, scrollToBottom]);
 
-  // Mark message as read
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+    }
+  }, [currentConversation, user, scrollToBottom, isConnected]);
+
   const markAsRead = useCallback(async (messageId: string) => {
     try {
       await chatApi.markAsRead(messageId);
@@ -112,7 +189,6 @@ export const useChat = () => {
     }
   }, []);
 
-  // Mark conversation as read
   const markConversationAsRead = useCallback(async (conversationId: string) => {
     try {
       await chatApi.markConversationAsRead(conversationId);
@@ -121,7 +197,6 @@ export const useChat = () => {
     }
   }, []);
 
-  // Create or get direct conversation
   const createDirectConversation = useCallback(async (userId: string) => {
     try {
       const conversation = await chatApi.getOrCreateDirectConversation(userId);
@@ -135,40 +210,113 @@ export const useChat = () => {
     }
   }, [loadMessages]);
 
-  // Set current conversation
   const selectConversation = useCallback(async (conversation: Conversation) => {
+    console.log('Selecting conversation:', conversation.id);
+
+    setJustSelectedConversation(true);
+
     setCurrentConversation(conversation);
-    await loadMessages(conversation.id);
-    
-    // Join conversation via WebSocket
+
+    setMessages([]);
+
+    setConversations(prev => prev.map(conv =>
+      conv.id === conversation.id
+        ? { ...conv, unreadCount: 0 }
+        : conv
+    ));
+
     websocketService.joinConversation(conversation.id);
-    
-    // Mark as read
-    await markConversationAsRead(conversation.id);
-    
-    // Scroll to bottom after selecting conversation
-    setTimeout(() => scrollToBottom(), 200);
+
+    loadMessages(conversation.id).catch(error => {
+      console.error('Failed to load messages:', error);
+      setError('Failed to load messages');
+    });
+
+    markConversationAsRead(conversation.id).catch(error => {
+      console.error('Failed to mark as read:', error);
+    });
+
+    setTimeout(() => scrollToBottom(), 50);
+
+    setTimeout(() => setJustSelectedConversation(false), 100);
   }, [loadMessages, markConversationAsRead, scrollToBottom]);
 
-  // Send typing indicator
   const sendTypingIndicator = useCallback((isTyping: boolean) => {
     if (currentConversation) {
       websocketService.sendTypingIndicator(currentConversation.id, isTyping);
     }
   }, [currentConversation]);
 
-  // WebSocket message handlers
   useEffect(() => {
-    if (!isConnected || !currentConversation) return;
+    if (!isConnected || !currentConversation) {
+      console.log('Skipping WebSocket subscriptions - not connected or no conversation');
+      return;
+    }
 
-    // Handle new messages
+    console.log('Setting up WebSocket subscriptions for conversation:', currentConversation.id);
+
     const handleNewMessage = (message: Message) => {
-      setMessages(prev => [...prev, message]);
-      // Scroll to bottom after adding new message
+      setMessages(prev => {
+        const exists = prev.some(msg => msg.id === message.id);
+        if (exists) {
+          console.log(`Message ${message.id} already exists, skipping...`);
+          return prev;
+        }
+
+        if (message.senderId === user?.id) {
+          const hasOptimisticMessage = prev.some(msg =>
+            msg.id.startsWith('temp-') &&
+            msg.senderId === user.id &&
+            msg.content === message.content
+          );
+
+          if (hasOptimisticMessage) {
+            return prev.map(msg =>
+              msg.id.startsWith('temp-') &&
+                msg.senderId === user.id &&
+                msg.content === message.content
+                ? { ...message, metadata: { ...message.metadata, isOptimistic: false, isSending: false } }
+                : msg
+            );
+          }
+        }
+
+        const newMessages = [...prev, message];
+
+        if (currentConversation) {
+          messagesCache.current.set(currentConversation.id, newMessages);
+        }
+
+        return newMessages;
+      });
+
+      setConversations(prev => {
+        const updatedConversations = prev.map(conv => {
+          if (conv.id === message.conversationId) {
+            const isFromOtherUser = message.senderId !== user?.id;
+            const isNotCurrentConversation = currentConversation?.id !== message.conversationId;
+            const shouldIncrementUnread = isFromOtherUser && isNotCurrentConversation;
+
+            return {
+              ...conv,
+              lastMessage: message,
+              updatedAt: message.createdAt,
+              unreadCount: shouldIncrementUnread ? (conv.unreadCount || 0) + 1 : conv.unreadCount
+            };
+          }
+          return conv;
+        });
+
+        return updatedConversations.sort((a, b) => {
+          const aTime = new Date(a.updatedAt || a.lastMessage?.createdAt || 0).getTime();
+          const bTime = new Date(b.updatedAt || b.lastMessage?.createdAt || 0).getTime();
+          return bTime - aTime;
+        });
+      });
+
       setTimeout(() => scrollToBottom(), 100);
     };
 
-    // Handle typing indicators
     const handleTypingIndicator = (indicator: TypingIndicator) => {
       if (indicator.userId !== user?.id) {
         if (indicator.isTyping) {
@@ -183,35 +331,45 @@ export const useChat = () => {
       }
     };
 
-    // Handle read receipts
     const handleReadReceipt = (receipt: ReadReceipt) => {
-      // Update message read status
-      setMessages(prev => prev.map(msg => 
-        msg.id === receipt.messageId 
+      setMessages(prev => prev.map(msg =>
+        msg.id === receipt.messageId
           ? { ...msg, isRead: true, readAt: new Date(receipt.timestamp).toISOString() }
           : msg
       ));
     };
 
-    // Subscribe to conversation messages
-    websocketService.subscribeToConversation(currentConversation.id, handleNewMessage);
-    websocketService.subscribeToTyping(currentConversation.id, handleTypingIndicator);
-    websocketService.subscribeToReadReceipts(currentConversation.id, handleReadReceipt);
+    // Add a small delay to ensure the connection is fully established
+    const subscriptionTimeout = setTimeout(() => {
+      if (websocketService.getConnectionStatus()) {
+        websocketService.subscribeToConversation(currentConversation.id, handleNewMessage);
+        websocketService.subscribeToTyping(currentConversation.id, handleTypingIndicator);
+        websocketService.subscribeToReadReceipts(currentConversation.id, handleReadReceipt);
+      } else {
+        console.error('WebSocket connection lost before setting up subscriptions');
+      }
+    }, 200);
 
-    // Cleanup subscriptions
     return () => {
+      clearTimeout(subscriptionTimeout);
       websocketService.unsubscribe(`/topic/conversation/${currentConversation.id}`);
       websocketService.unsubscribe(`/topic/conversation/${currentConversation.id}/typing`);
       websocketService.unsubscribe(`/topic/conversation/${currentConversation.id}/read`);
     };
-  }, [isConnected, currentConversation, user?.id, scrollToBottom]);
+  }, [isConnected, currentConversation?.id, user?.id, scrollToBottom]);
 
-  // Load conversations on mount
   useEffect(() => {
     if (user?.id) {
       loadConversations();
     }
   }, [user?.id, loadConversations]);
+
+
+  useEffect(() => {
+    if (conversations.length > 0 && !currentConversation) {
+      selectConversation(conversations[0]);
+    }
+  }, [conversations, currentConversation, selectConversation]);
 
   return {
     conversations,
@@ -222,6 +380,7 @@ export const useChat = () => {
     isConnected,
     typingUsers,
     messagesEndRef,
+    justSelectedConversation,
     loadConversations,
     loadMessages,
     sendMessage,

@@ -9,27 +9,25 @@ class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private messageHandlers: Map<string, (data: any) => void> = new Map();
+  private subscriptions: Map<string, any> = new Map();
   private currentUserId: string | null = null;
+  private receivedMessageIds: Set<string> = new Set();
 
   connect(userId: string, token?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
         this.currentUserId = userId;
-        
-        // Create SockJS connection
+
         const socket = new SockJS('http://localhost:8080/api/ws');
-        
-        // Prepare connection headers
+
         const connectHeaders: any = {
           userId: userId
         };
-        
-        // Add JWT token if available
+
         if (token) {
           connectHeaders.Authorization = `Bearer ${token}`;
         }
-        
-        // Create STOMP client
+
         this.client = new Client({
           webSocketFactory: () => socket,
           connectHeaders: connectHeaders,
@@ -40,14 +38,19 @@ class WebSocketService {
             console.log('WebSocket connected:', frame);
             this.isConnected = true;
             this.reconnectAttempts = 0;
-            resolve();
+            // Add a small delay to ensure the connection is fully established
+            setTimeout(() => {
+              resolve();
+            }, 100);
           },
           onStompError: (frame) => {
             console.error('STOMP error:', frame);
+            this.isConnected = false;
             reject(new Error(frame.headers.message || 'WebSocket connection failed'));
           },
           onWebSocketError: (error) => {
             console.error('WebSocket error:', error);
+            this.isConnected = false;
             this.handleReconnect();
           },
           onWebSocketClose: () => {
@@ -70,259 +73,448 @@ class WebSocketService {
       this.client.deactivate();
       this.isConnected = false;
       this.messageHandlers.clear();
+      this.subscriptions.clear();
+      this.receivedMessageIds.clear();
     }
   }
 
-  // Subscribe to conversation messages
   subscribeToConversation(conversationId: string, callback: (message: Message) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, queuing subscription');
+      // Queue the subscription to be executed when connection is ready
+      setTimeout(() => {
+        if (this.isConnected) {
+          this.subscribeToConversation(conversationId, callback);
+        } else {
+          console.error('WebSocket still not connected after retry');
+        }
+      }, 100);
       return;
     }
 
     const destination = `/topic/conversation/${conversationId}`;
-    this.client.subscribe(destination, (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        callback(data);
-      } catch (error) {
-        console.error('Error parsing message:', error);
-      }
-    });
 
-    this.messageHandlers.set(destination, callback);
+    if (this.subscriptions.has(destination)) {
+      console.log(`Already subscribed to ${destination}`);
+      return;
+    }
+
+    try {
+      const subscription = this.client.subscribe(destination, (message) => {
+        try {
+          const data = JSON.parse(message.body);
+
+          if (data.id && this.receivedMessageIds.has(data.id)) {
+            console.log(`Duplicate message detected: ${data.id}`);
+            return;
+          }
+
+          if (data.id) {
+            this.receivedMessageIds.add(data.id);
+          }
+
+          callback(data);
+        } catch (error) {
+          console.error('Error parsing message:', error);
+        }
+      });
+
+      this.subscriptions.set(destination, subscription);
+      this.messageHandlers.set(destination, callback);
+      console.log(`Successfully subscribed to ${destination}`);
+    } catch (error) {
+      console.error(`Failed to subscribe to ${destination}:`, error);
+    }
   }
 
-  // Subscribe to user-specific messages
   subscribeToUserMessages(callback: (message: Message) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, queuing subscription');
+      setTimeout(() => {
+        if (this.isConnected) {
+          this.subscribeToUserMessages(callback);
+        } else {
+          console.error('WebSocket still not connected after retry');
+        }
+      }, 100);
       return;
     }
 
     const destination = `/user/queue/messages`;
-    this.client.subscribe(destination, (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        callback(data);
-      } catch (error) {
-        console.error('Error parsing user message:', error);
-      }
-    });
+    try {
+      this.client.subscribe(destination, (message) => {
+        try {
+          const data = JSON.parse(message.body);
+          callback(data);
+        } catch (error) {
+          console.error('Error parsing user message:', error);
+        }
+      });
 
-    this.messageHandlers.set(destination, callback);
+      this.messageHandlers.set(destination, callback);
+      console.log(`Successfully subscribed to ${destination}`);
+    } catch (error) {
+      console.error(`Failed to subscribe to ${destination}:`, error);
+    }
   }
 
-  // Subscribe to user conversations
   subscribeToUserConversations(callback: (conversation: any) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, queuing subscription');
+      setTimeout(() => {
+        if (this.isConnected) {
+          this.subscribeToUserConversations(callback);
+        } else {
+          console.error('WebSocket still not connected after retry');
+        }
+      }, 100);
       return;
     }
 
     const destination = `/user/queue/conversations`;
-    this.client.subscribe(destination, (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        callback(data);
-      } catch (error) {
-        console.error('Error parsing conversation:', error);
-      }
-    });
+    try {
+      this.client.subscribe(destination, (message) => {
+        try {
+          const data = JSON.parse(message.body);
+          callback(data);
+        } catch (error) {
+          console.error('Error parsing conversation:', error);
+        }
+      });
 
-    this.messageHandlers.set(destination, callback);
+      this.messageHandlers.set(destination, callback);
+      console.log(`Successfully subscribed to ${destination}`);
+    } catch (error) {
+      console.error(`Failed to subscribe to ${destination}:`, error);
+    }
   }
 
-  // Subscribe to typing indicators
   subscribeToTyping(conversationId: string, callback: (indicator: TypingIndicator) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, queuing subscription');
+      setTimeout(() => {
+        if (this.isConnected) {
+          this.subscribeToTyping(conversationId, callback);
+        } else {
+          console.error('WebSocket still not connected after retry');
+        }
+      }, 100);
       return;
     }
 
     const destination = `/topic/conversation/${conversationId}/typing`;
-    this.client.subscribe(destination, (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        callback(data);
-      } catch (error) {
-        console.error('Error parsing typing indicator:', error);
-      }
-    });
 
-    this.messageHandlers.set(destination, callback);
+    if (this.subscriptions.has(destination)) {
+      console.log(`Already subscribed to ${destination}`);
+      return;
+    }
+
+    try {
+      const subscription = this.client.subscribe(destination, (message) => {
+        try {
+          const data = JSON.parse(message.body);
+          callback(data);
+        } catch (error) {
+          console.error('Error parsing typing indicator:', error);
+        }
+      });
+
+      this.subscriptions.set(destination, subscription);
+      this.messageHandlers.set(destination, callback);
+      console.log(`Successfully subscribed to ${destination}`);
+    } catch (error) {
+      console.error(`Failed to subscribe to ${destination}:`, error);
+    }
   }
 
-  // Subscribe to read receipts
   subscribeToReadReceipts(conversationId: string, callback: (receipt: ReadReceipt) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, queuing subscription');
+      setTimeout(() => {
+        if (this.isConnected) {
+          this.subscribeToReadReceipts(conversationId, callback);
+        } else {
+          console.error('WebSocket still not connected after retry');
+        }
+      }, 100);
       return;
     }
 
     const destination = `/topic/conversation/${conversationId}/read`;
-    this.client.subscribe(destination, (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        callback(data);
-      } catch (error) {
-        console.error('Error parsing read receipt:', error);
-      }
-    });
 
-    this.messageHandlers.set(destination, callback);
+    if (this.subscriptions.has(destination)) {
+      console.log(`Already subscribed to ${destination}`);
+      return;
+    }
+
+    try {
+      const subscription = this.client.subscribe(destination, (message) => {
+        try {
+          const data = JSON.parse(message.body);
+          callback(data);
+        } catch (error) {
+          console.error('Error parsing read receipt:', error);
+        }
+      });
+
+      this.subscriptions.set(destination, subscription);
+      this.messageHandlers.set(destination, callback);
+      console.log(`Successfully subscribed to ${destination}`);
+    } catch (error) {
+      console.error(`Failed to subscribe to ${destination}:`, error);
+    }
   }
 
-  // Subscribe to presence updates
   subscribeToPresence(conversationId: string, callback: (update: PresenceUpdate) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, queuing subscription');
+      setTimeout(() => {
+        if (this.isConnected) {
+          this.subscribeToPresence(conversationId, callback);
+        } else {
+          console.error('WebSocket still not connected after retry');
+        }
+      }, 100);
       return;
     }
 
     const destination = `/topic/conversation/${conversationId}/presence`;
-    this.client.subscribe(destination, (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        callback(data);
-      } catch (error) {
-        console.error('Error parsing presence update:', error);
-      }
-    });
+    try {
+      this.client.subscribe(destination, (message) => {
+        try {
+          const data = JSON.parse(message.body);
+          callback(data);
+        } catch (error) {
+          console.error('Error parsing presence update:', error);
+        }
+      });
 
-    this.messageHandlers.set(destination, callback);
+      this.messageHandlers.set(destination, callback);
+      console.log(`Successfully subscribed to ${destination}`);
+    } catch (error) {
+      console.error(`Failed to subscribe to ${destination}:`, error);
+    }
   }
 
-  // Subscribe to errors
   subscribeToErrors(callback: (error: string) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, queuing subscription');
+      setTimeout(() => {
+        if (this.isConnected) {
+          this.subscribeToErrors(callback);
+        } else {
+          console.error('WebSocket still not connected after retry');
+        }
+      }, 100);
       return;
     }
 
     const destination = `/user/queue/errors`;
-    this.client.subscribe(destination, (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        callback(data);
-      } catch (error) {
-        console.error('Error parsing error message:', error);
-      }
-    });
+    try {
+      this.client.subscribe(destination, (message) => {
+        try {
+          const data = JSON.parse(message.body);
+          callback(data);
+        } catch (error) {
+          console.error('Error parsing error message:', error);
+        }
+      });
 
-    this.messageHandlers.set(destination, callback);
+      this.messageHandlers.set(destination, callback);
+      console.log(`Successfully subscribed to ${destination}`);
+    } catch (error) {
+      console.error(`Failed to subscribe to ${destination}:`, error);
+    }
   }
 
-  // Send message
   sendMessage(conversationId: string, request: SendMessageRequest): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, cannot send message');
       return;
     }
 
     const destination = `/app/conversation/${conversationId}/send`;
-    this.client.publish({
-      destination,
-      body: JSON.stringify(request)
-    });
+    try {
+      this.client.publish({
+        destination,
+        body: JSON.stringify(request)
+      });
+      console.log('Message sent successfully to:', destination);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
   }
 
-  // Send typing indicator
   sendTypingIndicator(conversationId: string, isTyping: boolean): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, cannot send typing indicator');
       return;
     }
 
     const destination = `/app/conversation/${conversationId}/typing`;
-    this.client.publish({
-      destination,
-      body: isTyping.toString()
-    });
+    try {
+      this.client.publish({
+        destination,
+        body: isTyping.toString()
+      });
+    } catch (error) {
+      console.error('Failed to send typing indicator:', error);
+    }
   }
 
-  // Mark message as read
   markAsRead(conversationId: string, messageId: string): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, cannot mark as read');
       return;
     }
 
     const destination = `/app/conversation/${conversationId}/read`;
-    this.client.publish({
-      destination,
-      body: messageId
-    });
+    try {
+      this.client.publish({
+        destination,
+        body: messageId
+      });
+    } catch (error) {
+      console.error('Failed to mark as read:', error);
+    }
   }
 
-  // Join conversation
   joinConversation(conversationId: string): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, cannot join conversation');
       return;
     }
 
     const destination = `/app/conversation/${conversationId}/join`;
-    this.client.publish({
-      destination,
-      body: ''
-    });
+    try {
+      this.client.publish({
+        destination,
+        body: ''
+      });
+    } catch (error) {
+      console.error('Failed to join conversation:', error);
+    }
   }
 
-  // Leave conversation
   leaveConversation(conversationId: string): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected');
+    if (!this.client) {
+      console.error('WebSocket client not initialized');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, cannot leave conversation');
       return;
     }
 
     const destination = `/app/conversation/${conversationId}/leave`;
-    this.client.publish({
-      destination,
-      body: ''
-    });
+    try {
+      this.client.publish({
+        destination,
+        body: ''
+      });
+    } catch (error) {
+      console.error('Failed to leave conversation:', error);
+    }
   }
 
-  // Unsubscribe from destination
   unsubscribe(destination: string): void {
     if (this.client && this.isConnected) {
-      this.client.unsubscribe(destination);
+      const subscription = this.subscriptions.get(destination);
+      if (subscription) {
+        subscription.unsubscribe();
+        this.subscriptions.delete(destination);
+      }
       this.messageHandlers.delete(destination);
     }
   }
 
-  // Get connection status
   getConnectionStatus(): boolean {
     return this.isConnected;
   }
 
-  // Handle reconnection
   private handleReconnect(): void {
     if (this.reconnectAttempts < this.maxReconnectAttempts && this.currentUserId) {
       this.reconnectAttempts++;
       console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-      
+
       setTimeout(() => {
         this.connect(this.currentUserId!)
           .then(() => {
             console.log('Reconnected successfully');
-            // Re-subscribe to all previous subscriptions
             this.resubscribeAll();
           })
           .catch((error) => {
             console.error('Reconnection failed:', error);
+            // Continue trying to reconnect
+            this.handleReconnect();
           });
       }, this.reconnectDelay * this.reconnectAttempts);
     } else {
       console.error('Max reconnection attempts reached');
+      this.isConnected = false;
     }
   }
 
-  // Re-subscribe to all previous subscriptions
   private resubscribeAll(): void {
-    // This would need to be implemented based on your specific needs
-    // You might want to store subscription information and re-establish them
     console.log('Re-subscribing to all previous subscriptions...');
+    this.subscriptions.clear();
+    this.receivedMessageIds.clear();
   }
 }
 

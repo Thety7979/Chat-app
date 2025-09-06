@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useFriends } from '../hooks/useFriends';
 import { SearchUser, SendFriendRequestRequest } from '../types/friend';
+import ConfirmDialog from './ConfirmDialog';
 
 interface AddFriendModalProps {
   isOpen: boolean;
@@ -9,15 +10,18 @@ interface AddFriendModalProps {
 }
 
 const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
-  const { searchUsers, sendFriendRequest, cancelFriendRequest, hasPendingRequest, areFriends, isLoading, sentRequests, loadSentRequests } = useFriends();
+  const { searchUsers, sendFriendRequest, cancelFriendRequest, hasPendingRequest, areFriends, isLoading, sentRequests, loadSentRequests, removeFriend } = useFriends();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [sendingRequest, setSendingRequest] = useState<string | null>(null);
   const [cancelingRequest, setCancelingRequest] = useState<string | null>(null);
+  const [removingFriend, setRemovingFriend] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [showMessageInput, setShowMessageInput] = useState<string | null>(null);
   const [userRequestStatus, setUserRequestStatus] = useState<Map<string, 'none' | 'sent' | 'received' | 'friends'>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false);
+  const [userToRemove, setUserToRemove] = useState<SearchUser | null>(null);
 
   // Search users when query changes
   useEffect(() => {
@@ -129,6 +133,40 @@ const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
     } finally {
       setCancelingRequest(null);
     }
+  };
+
+  const handleRemoveFriendClick = (user: SearchUser) => {
+    setUserToRemove(user);
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmRemoveFriend = async () => {
+    if (!userToRemove) return;
+    
+    try {
+      setRemovingFriend(userToRemove.id);
+      setError(null);
+      await removeFriend(userToRemove.id);
+      // Update user status to 'none'
+      setUserRequestStatus(prev => {
+        const newMap = new Map(prev);
+        newMap.set(userToRemove.id, 'none');
+        return newMap;
+      });
+    } catch (error: any) {
+      console.error('Failed to remove friend:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Không thể hủy kết bạn';
+      setError(errorMessage);
+    } finally {
+      setRemovingFriend(null);
+      setShowConfirmDialog(false);
+      setUserToRemove(null);
+    }
+  };
+
+  const handleCancelRemoveFriend = () => {
+    setShowConfirmDialog(false);
+    setUserToRemove(null);
   };
 
   const formatTime = (dateString: string) => {
@@ -269,9 +307,24 @@ const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
                           
                           if (status === 'friends') {
                             return (
-                              <span className="px-3 py-1 text-xs font-medium text-green-600 bg-green-100 rounded-md">
-                                Bạn bè
-                              </span>
+                              <div className="flex flex-col space-y-1">
+                                <span className="px-3 py-1 text-xs font-medium text-green-600 bg-green-100 rounded-md text-center">
+                                  Bạn bè
+                                </span>
+                                <motion.button
+                                  onClick={() => handleRemoveFriendClick(user)}
+                                  disabled={removingFriend === user.id}
+                                  className="px-3 py-1 text-xs font-medium text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors disabled:opacity-50"
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                >
+                                  {removingFriend === user.id ? (
+                                    <i className="fas fa-spinner fa-spin"></i>
+                                  ) : (
+                                    'Hủy kết bạn'
+                                  )}
+                                </motion.button>
+                              </div>
                             );
                           }
                           
@@ -368,6 +421,19 @@ const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
           </motion.div>
         </motion.div>
       )}
+      
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        onClose={handleCancelRemoveFriend}
+        onConfirm={handleConfirmRemoveFriend}
+        title="Hủy kết bạn"
+        message={`Bạn có chắc chắn muốn hủy kết bạn với ${userToRemove?.displayName || userToRemove?.username}?`}
+        confirmText="Hủy kết bạn"
+        cancelText="Không"
+        confirmButtonColor="red"
+        isLoading={removingFriend === userToRemove?.id}
+      />
     </AnimatePresence>
   );
 };

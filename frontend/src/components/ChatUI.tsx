@@ -249,6 +249,9 @@ const ChatUI: React.FC = () => {
     { id: 'help', label: 'Trợ giúp', icon: 'fas fa-question-circle' }
   ];
 
+  // Debug: Log friends count changes
+  console.log('ChatUI - Friends count:', friends.length, 'Friends:', friends.map(f => f.displayName || f.email));
+
   return (
     <div className="chat-container bg-[#f9fafc] h-screen flex font-sans text-sm text-[#1a1a1a] overflow-hidden">
       <AnimatePresence>
@@ -735,9 +738,16 @@ const ChatUI: React.FC = () => {
 
             <div className="messages-container flex-1 overflow-y-auto min-h-0">
               {activeSidebarItem === 'friends' ? (
-                <FriendsList onSelectFriend={(friend) => {
-                  setActiveSidebarItem('chats');
-                }} />
+                <FriendsList 
+                  onSelectFriend={(friend) => {
+                    setActiveSidebarItem('chats');
+                  }}
+                  onFriendRemoved={() => {
+                    // Reload friends when a friend is removed
+                    console.log('Friend removed, reloading friends list');
+                    loadFriends();
+                  }}
+                />
               ) : (
                 <div className="px-4 lg:px-5 py-4 space-y-4 min-h-full">
                   {!currentConversation ? (

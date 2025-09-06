@@ -518,28 +518,73 @@ class WebSocketService {
     this.receivedMessageIds.clear();
   }
 
+  // Wait for connection to be established
+  private async waitForConnection(timeout: number = 5000): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (this.isConnected) {
+        resolve(true);
+        return;
+      }
+
+      let attempts = 0;
+      const maxAttempts = timeout / 100; // Check every 100ms
+
+      const checkConnection = () => {
+        attempts++;
+        if (this.isConnected) {
+          resolve(true);
+        } else if (attempts >= maxAttempts) {
+          console.error('WebSocket connection timeout after', timeout, 'ms');
+          resolve(false);
+        } else {
+          setTimeout(checkConnection, 100);
+        }
+      };
+
+      checkConnection();
+    });
+  }
+
   // Friend Request WebSocket Methods
-  subscribeToFriendRequests(handler: (data: any) => void): void {
-    if (!this.client || !this.isConnected) {
-      console.error('WebSocket not connected, cannot subscribe to friend requests');
+  async subscribeToFriendRequests(handler: (data: any) => void): Promise<void> {
+    if (!this.client) {
+      console.error('WebSocket client not initialized, cannot subscribe to friend requests');
       return;
     }
 
-    const subscriptionId = `friend-requests-${Date.now()}`;
-    this.friendRequestHandlers.set(subscriptionId, handler);
+    // Wait for connection to be established
+    const connected = await this.waitForConnection();
+    if (!connected) {
+      console.error('WebSocket connection timeout, cannot subscribe to friend requests');
+      return;
+    }
 
-    const subscription = this.client.subscribe('/user/queue/friend-requests', (message) => {
-      try {
-        const data = JSON.parse(message.body);
-        console.log('Friend request event received:', data);
-        handler(data);
-      } catch (error) {
-        console.error('Failed to parse friend request message:', error);
-      }
-    });
+    try {
+      const subscriptionId = `friend-requests-${Date.now()}`;
+      this.friendRequestHandlers.set(subscriptionId, handler);
 
-    this.subscriptions.set(subscriptionId, subscription);
-    console.log('Subscribed to friend requests');
+      const subscription = this.client.subscribe('/user/queue/friend-requests', (message) => {
+        try {
+          const data = JSON.parse(message.body);
+          console.log('Friend request event received:', data);
+          handler(data);
+        } catch (error) {
+          console.error('Failed to parse friend request message:', error);
+        }
+      });
+
+      this.subscriptions.set(subscriptionId, subscription);
+      console.log('Subscribed to friend requests');
+    } catch (error) {
+      console.error('Failed to subscribe to friend requests:', error);
+      // If subscription fails, we can try to retry after a delay
+      setTimeout(() => {
+        console.log('Retrying friend request subscription...');
+        this.subscribeToFriendRequests(handler).catch(err => {
+          console.error('Retry failed:', err);
+        });
+      }, 2000);
+    }
   }
 
   unsubscribeFromFriendRequests(subscriptionId: string): void {

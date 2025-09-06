@@ -2,15 +2,23 @@ import React, { useState } from 'react';
 import { useFriends } from '../hooks/useFriends';
 import { useChat } from '../hooks/useChat';
 import chatApi from '../api/chatApi';
+import ConfirmDialog from './ConfirmDialog';
 
 interface FriendsListProps {
   onSelectFriend?: (friend: any) => void;
+  onFriendRemoved?: () => void;
 }
 
-const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend }) => {
-  const { friends, isLoading, error } = useFriends();
+const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemoved }) => {
+  const { friends, isLoading, error, removeFriend, loadFriends } = useFriends();
   const { selectConversation, loadConversations } = useChat();
+  
+  // Debug: Log friends count changes
+  console.log('FriendsList - Friends count:', friends.length, 'Friends:', friends.map(f => f.displayName || f.email));
   const [isStartingChat, setIsStartingChat] = useState<string | null>(null);
+  const [isRemovingFriend, setIsRemovingFriend] = useState<string | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false);
+  const [friendToRemove, setFriendToRemove] = useState<any>(null);
 
   const handleFriendClick = async (friend: any) => {
     if (onSelectFriend) {
@@ -34,6 +42,42 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend }) => {
         setIsStartingChat(null);
       }
     }
+  };
+
+  const handleRemoveFriendClick = (friend: any) => {
+    console.log('handleRemoveFriendClick called with friend:', friend);
+    setFriendToRemove(friend);
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmRemoveFriend = async () => {
+    if (!friendToRemove) return;
+    
+    try {
+      console.log('Starting to remove friend:', friendToRemove.id);
+      setIsRemovingFriend(friendToRemove.id);
+      await removeFriend(friendToRemove.id);
+      // Note: removeFriend already updates the friends state, no need to call loadFriends()
+      // Reload conversations to remove any direct conversations with this friend
+      await loadConversations();
+      // Notify parent component that a friend was removed
+      if (onFriendRemoved) {
+        onFriendRemoved();
+      }
+      console.log('Successfully removed friend:', friendToRemove.displayName || friendToRemove.email);
+    } catch (error) {
+      console.error('Failed to remove friend:', error);
+      alert(`Không thể hủy kết bạn với ${friendToRemove.displayName || friendToRemove.email}`);
+    } finally {
+      setIsRemovingFriend(null);
+      setShowConfirmDialog(false);
+      setFriendToRemove(null);
+    }
+  };
+
+  const handleCancelRemoveFriend = () => {
+    setShowConfirmDialog(false);
+    setFriendToRemove(null);
   };
 
   if (isLoading) {
@@ -109,11 +153,41 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend }) => {
                 >
                   <i className="fas fa-phone text-sm"></i>
                 </button>
+                <button
+                  className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 transition-colors"
+                  title="Hủy kết bạn"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Remove friend button clicked for:', friend);
+                    handleRemoveFriendClick(friend);
+                  }}
+                  disabled={isRemovingFriend === friend.id}
+                >
+                  {isRemovingFriend === friend.id ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                  ) : (
+                    <i className="fas fa-user-times text-sm"></i>
+                  )}
+                </button>
               </div>
             </div>
           ))}
         </div>
       </div>
+      
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        onClose={handleCancelRemoveFriend}
+        onConfirm={handleConfirmRemoveFriend}
+        title="Hủy kết bạn"
+        message={`Bạn có chắc chắn muốn hủy kết bạn với ${friendToRemove?.displayName || friendToRemove?.email}?`}
+        confirmText="Hủy kết bạn"
+        cancelText="Không"
+        confirmButtonColor="red"
+        isLoading={isRemovingFriend === friendToRemove?.id}
+      />
     </div>
   );
 };

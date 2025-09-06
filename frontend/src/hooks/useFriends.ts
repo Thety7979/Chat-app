@@ -194,7 +194,9 @@ export const useFriends = () => {
         loadPendingCount();
       };
 
-      websocketService.subscribeToFriendRequests(friendRequestHandler);
+      websocketService.subscribeToFriendRequests(friendRequestHandler).catch(error => {
+        console.error('Failed to subscribe to friend requests:', error);
+      });
 
       // Cleanup subscription on unmount
       return () => {

@@ -9,29 +9,82 @@ interface AddFriendModalProps {
 }
 
 const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
-  const { searchUsers, sendFriendRequest, hasPendingRequest, isLoading } = useFriends();
+  const { searchUsers, sendFriendRequest, cancelFriendRequest, hasPendingRequest, areFriends, isLoading, sentRequests, loadSentRequests } = useFriends();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [sendingRequest, setSendingRequest] = useState<string | null>(null);
+  const [cancelingRequest, setCancelingRequest] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [showMessageInput, setShowMessageInput] = useState<string | null>(null);
+  const [userRequestStatus, setUserRequestStatus] = useState<Map<string, 'none' | 'sent' | 'received' | 'friends'>>(new Map());
+  const [error, setError] = useState<string | null>(null);
 
   // Search users when query changes
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (searchQuery.trim()) {
-        searchUsers(searchQuery.trim()).then(setSearchResults);
+        searchUsers(searchQuery.trim()).then((results) => {
+          setSearchResults(results);
+          // Check request status for each user
+          checkUserRequestStatus(results);
+        });
       } else {
         setSearchResults([]);
+        setUserRequestStatus(new Map());
       }
     }, 300);
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, searchUsers]);
 
+  // Update user status when sentRequests change
+  useEffect(() => {
+    if (searchResults.length > 0) {
+      checkUserRequestStatus(searchResults);
+    }
+  }, [sentRequests]);
+
+  // Check request status for users
+  const checkUserRequestStatus = async (users: SearchUser[]) => {
+    const statusMap = new Map<string, 'none' | 'sent' | 'received' | 'friends'>();
+    
+    for (const user of users) {
+      try {
+        // Check if already friends
+        const isFriend = await areFriends(user.id);
+        if (isFriend) {
+          statusMap.set(user.id, 'friends');
+          continue;
+        }
+
+        // Check if request already sent
+        const hasSent = sentRequests.some(req => req.receiver.id === user.id);
+        if (hasSent) {
+          statusMap.set(user.id, 'sent');
+          continue;
+        }
+
+        // Check if request received
+        const hasReceived = await hasPendingRequest(user.id);
+        if (hasReceived) {
+          statusMap.set(user.id, 'received');
+          continue;
+        }
+
+        statusMap.set(user.id, 'none');
+      } catch (error) {
+        console.error('Error checking request status for user:', user.id, error);
+        statusMap.set(user.id, 'none');
+      }
+    }
+    
+    setUserRequestStatus(statusMap);
+  };
+
   const handleSendRequest = async (userId: string) => {
     try {
       setSendingRequest(userId);
+      setError(null); // Clear previous error
       const request: SendFriendRequestRequest = {
         receiverId: userId,
         message: message.trim() || undefined
@@ -39,12 +92,42 @@ const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
       await sendFriendRequest(request);
       setMessage('');
       setShowMessageInput(null);
-      // Remove from search results
-      setSearchResults(prev => prev.filter(user => user.id !== userId));
-    } catch (error) {
+      // Update user status to 'sent'
+      setUserRequestStatus(prev => {
+        const newMap = new Map(prev);
+        newMap.set(userId, 'sent');
+        return newMap;
+      });
+    } catch (error: any) {
       console.error('Failed to send friend request:', error);
+      // Extract error message from response
+      const errorMessage = error?.response?.data?.message || error?.message || 'Không thể gửi lời mời kết bạn';
+      setError(errorMessage);
     } finally {
       setSendingRequest(null);
+    }
+  };
+
+  const handleCancelRequest = async (userId: string) => {
+    try {
+      setCancelingRequest(userId);
+      // Find the request ID for this user
+      const request = sentRequests.find(req => req.receiver.id === userId);
+      if (request) {
+        await cancelFriendRequest(request.id);
+        // Reload sent requests to ensure consistency
+        await loadSentRequests();
+        // Update user status to 'none'
+        setUserRequestStatus(prev => {
+          const newMap = new Map(prev);
+          newMap.set(userId, 'none');
+          return newMap;
+        });
+      }
+    } catch (error) {
+      console.error('Failed to cancel friend request:', error);
+    } finally {
+      setCancelingRequest(null);
     }
   };
 
@@ -107,6 +190,22 @@ const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
                 />
                 <i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
               </div>
+              
+              {/* Error Message */}
+              {error && (
+                <div className="mt-3 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                  <div className="flex items-center">
+                    <i className="fas fa-exclamation-triangle mr-2"></i>
+                    <span className="text-sm">{error}</span>
+                    <button
+                      onClick={() => setError(null)}
+                      className="ml-auto text-red-500 hover:text-red-700"
+                    >
+                      <i className="fas fa-times"></i>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Content */}
@@ -165,53 +264,101 @@ const AddFriendModal: React.FC<AddFriendModalProps> = ({ isOpen, onClose }) => {
 
                       {/* Action */}
                       <div className="flex flex-col space-y-2">
-                        {showMessageInput === user.id ? (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              placeholder="Tin nhắn (tùy chọn)"
-                              value={message}
-                              onChange={(e) => setMessage(e.target.value)}
-                              className="w-32 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                            <div className="flex space-x-1">
-                              <button
-                                onClick={() => {
-                                  setShowMessageInput(null);
-                                  setMessage('');
-                                }}
-                                className="px-2 py-1 text-xs text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
-                              >
-                                Hủy
-                              </button>
-                              <button
-                                onClick={() => handleSendRequest(user.id)}
-                                disabled={sendingRequest === user.id}
-                                className="px-2 py-1 text-xs text-white bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-50"
-                              >
-                                {sendingRequest === user.id ? (
-                                  <i className="fas fa-spinner fa-spin"></i>
-                                ) : (
-                                  'Gửi'
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <motion.button
-                            onClick={() => setShowMessageInput(user.id)}
-                            disabled={sendingRequest === user.id}
-                            className="px-3 py-1 text-xs font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                          >
-                            {sendingRequest === user.id ? (
-                              <i className="fas fa-spinner fa-spin"></i>
-                            ) : (
-                              'Kết bạn'
-                            )}
-                          </motion.button>
-                        )}
+                        {(() => {
+                          const status = userRequestStatus.get(user.id) || 'none';
+                          
+                          if (status === 'friends') {
+                            return (
+                              <span className="px-3 py-1 text-xs font-medium text-green-600 bg-green-100 rounded-md">
+                                Bạn bè
+                              </span>
+                            );
+                          }
+                          
+                          if (status === 'sent') {
+                            return (
+                              <div className="flex flex-col space-y-1">
+                                <span className="px-3 py-1 text-xs font-medium text-orange-600 bg-orange-100 rounded-md text-center">
+                                  Đã gửi lời mời
+                                </span>
+                                <motion.button
+                                  onClick={() => handleCancelRequest(user.id)}
+                                  disabled={cancelingRequest === user.id}
+                                  className="px-3 py-1 text-xs font-medium text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors disabled:opacity-50"
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
+                                >
+                                  {cancelingRequest === user.id ? (
+                                    <i className="fas fa-spinner fa-spin"></i>
+                                  ) : (
+                                    'Hủy lời mời'
+                                  )}
+                                </motion.button>
+                              </div>
+                            );
+                          }
+                          
+                          if (status === 'received') {
+                            return (
+                              <span className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-100 rounded-md">
+                                Có lời mời
+                              </span>
+                            );
+                          }
+                          
+                          // status === 'none'
+                          if (showMessageInput === user.id) {
+                            return (
+                              <div className="space-y-2">
+                                <input
+                                  type="text"
+                                  placeholder="Tin nhắn (tùy chọn)"
+                                  value={message}
+                                  onChange={(e) => setMessage(e.target.value)}
+                                  className="w-32 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                                <div className="flex space-x-1">
+                                  <button
+                                    onClick={() => {
+                                      setShowMessageInput(null);
+                                      setMessage('');
+                                    }}
+                                    className="px-2 py-1 text-xs text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
+                                  >
+                                    Hủy
+                                  </button>
+                                  <button
+                                    onClick={() => handleSendRequest(user.id)}
+                                    disabled={sendingRequest === user.id}
+                                    className="px-2 py-1 text-xs text-white bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-50"
+                                  >
+                                    {sendingRequest === user.id ? (
+                                      <i className="fas fa-spinner fa-spin"></i>
+                                    ) : (
+                                      'Gửi'
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+                          
+                          return (
+                            <motion.button
+                              onClick={() => setShowMessageInput(user.id)}
+                              disabled={sendingRequest === user.id}
+                              className="px-3 py-1 text-xs font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50"
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                            >
+                              {sendingRequest === user.id ? (
+                                <i className="fas fa-spinner fa-spin"></i>
+                              ) : (
+                                'Kết bạn'
+                              )}
+                            </motion.button>
+                          );
+                        })()}
                       </div>
                     </motion.div>
                   ))}

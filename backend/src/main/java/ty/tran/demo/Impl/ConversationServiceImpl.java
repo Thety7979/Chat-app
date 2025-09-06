@@ -27,6 +27,7 @@ public class ConversationServiceImpl implements ConversationService {
     private final DirectConversationDAO directConversationDAO;
     private final UserDAO userDAO;
     private final MessageDAO messageDAO;
+    private final FriendshipDAO friendshipDAO;
     private final SimpMessagingTemplate messagingTemplate;
     // Removed circular dependency - will use direct DAO access
 
@@ -46,7 +47,7 @@ public class ConversationServiceImpl implements ConversationService {
             throw new RuntimeException("Some member IDs are invalid");
         }
 
-        // For direct conversations, check if already exists
+        // For direct conversations, check if already exists and validate friendship
         if (request.getType() == Conversation.ConversationType.direct) {
             if (request.getMemberIds().size() != 2) {
                 throw new RuntimeException("Direct conversation must have exactly 2 members");
@@ -56,6 +57,13 @@ public class ConversationServiceImpl implements ConversationService {
                     .filter(id -> !id.equals(creatorId))
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Invalid direct conversation setup"));
+
+            // Check if users are friends
+            boolean areFriends = friendshipDAO.areFriends(creatorId, otherUserId);
+            if (!areFriends) {
+                log.warn("Users {} and {} are not friends, cannot create direct conversation", creatorId, otherUserId);
+                throw new RuntimeException("Cannot create direct conversation with non-friend user");
+            }
 
             Optional<Conversation> existingDirect = conversationDAO.findDirectConversationBetweenUsers(creatorId, otherUserId);
             if (existingDirect.isPresent()) {
@@ -108,11 +116,54 @@ public class ConversationServiceImpl implements ConversationService {
 
         // Create direct conversation record if needed
         if (request.getType() == Conversation.ConversationType.direct) {
-            UUID user1Id = creatorId;
-            UUID user2Id = request.getMemberIds().stream()
-                    .filter(id -> !id.equals(creatorId))
+            UUID conversationCreatorId = conversation.getCreatedBy().getId();
+            UUID otherUserId = request.getMemberIds().stream()
+                    .filter(id -> !id.equals(conversationCreatorId))
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Invalid direct conversation setup"));
+
+            // Use a consistent ordering based on string comparison to satisfy ck_dc_order constraint
+            UUID user1Id, user2Id;
+            
+            // Use string comparison for consistent ordering with database constraint
+            int comparison = conversationCreatorId.toString().compareTo(otherUserId.toString());
+            
+            log.info("String comparison: creatorId={}, otherId={}, comparison={}", 
+                    conversationCreatorId, otherUserId, comparison);
+            
+            if (comparison < 0) {
+                user1Id = conversationCreatorId;
+                user2Id = otherUserId;
+            } else {
+                user1Id = otherUserId;
+                user2Id = conversationCreatorId;
+            }
+            
+            log.info("Final ordering: user1Id={}, user2Id={}", user1Id, user2Id);
+            
+            // Double check the constraint by comparing the final values using string comparison
+            log.info("Final comparison check: user1Id.toString().compareTo(user2Id.toString()) = {}", 
+                    user1Id.toString().compareTo(user2Id.toString()));
+            
+            // Additional check: ensure user1_id < user2_id for the constraint using string comparison
+            if (user1Id.toString().compareTo(user2Id.toString()) >= 0) {
+                log.error("Constraint violation detected! user1Id >= user2Id: {} >= {}", user1Id, user2Id);
+                throw new RuntimeException("Invalid user ordering for direct conversation constraint");
+            }
+            
+            // Final validation: ensure the constraint is satisfied
+            log.info("Constraint validation passed: user1Id < user2Id");
+            
+            // Additional logging for debugging
+            log.info("About to create DirectConversation with user1Id={}, user2Id={}", user1Id, user2Id);
+            
+            // Constraint validation using string comparison (matches database constraint)
+            log.info("String constraint validation: user1Id.toString() < user2Id.toString()? {} < {} = {}", 
+                    user1Id.toString(), user2Id.toString(), user1Id.toString().compareTo(user2Id.toString()) < 0);
+            
+            // Final constraint validation before database insert using string comparison
+            log.info("Final constraint validation: user1Id.toString() < user2Id.toString() = {}", 
+                    user1Id.toString().compareTo(user2Id.toString()) < 0);
 
             log.info("Creating DirectConversation with conversationId: {}", conversation.getId());
             
@@ -133,6 +184,8 @@ public class ConversationServiceImpl implements ConversationService {
                     directConversation.getConversationId(), 
                     directConversation.getUser1().getEmail(), 
                     directConversation.getUser2().getEmail());
+            log.info("User IDs: user1Id={}, user2Id={}, comparison={}", 
+                    user1Id, user2Id, user1Id.compareTo(user2Id));
             
             log.info("Saving DirectConversation...");
             directConversationDAO.save(directConversation);
@@ -188,11 +241,31 @@ public class ConversationServiceImpl implements ConversationService {
     public ConversationDTO getOrCreateDirectConversation(UUID user1Id, UUID user2Id) {
         log.info("getOrCreateDirectConversation called with user1Id: {}, user2Id: {}", user1Id, user2Id);
         
-        // Check if direct conversation already exists
-        Optional<Conversation> existing = conversationDAO.findDirectConversationBetweenUsers(user1Id, user2Id);
-        if (existing.isPresent()) {
-            log.info("Found existing direct conversation: {}", existing.get().getId());
-            return convertToDTO(existing.get(), user1Id);
+        // Check if users are friends first
+        boolean areFriends = friendshipDAO.areFriends(user1Id, user2Id);
+        if (!areFriends) {
+            log.warn("Users {} and {} are not friends, cannot create direct conversation", user1Id, user2Id);
+            throw new RuntimeException("Cannot create direct conversation with non-friend user");
+        }
+        log.info("Users are friends, proceeding with conversation creation");
+        
+        // Check if direct conversation already exists using DirectConversationDAO
+        // Try both orders to be safe
+        Optional<DirectConversation> existingDirect = directConversationDAO.findDirectConversationBetweenUsers(user1Id, user2Id);
+        if (existingDirect.isPresent()) {
+            log.info("Found existing direct conversation: {}", existingDirect.get().getConversationId());
+            // Get the conversation from the direct conversation
+            Conversation conversation = existingDirect.get().getConversation();
+            return convertToDTO(conversation, user1Id);
+        }
+        
+        // Also try the reverse order
+        Optional<DirectConversation> existingReverse = directConversationDAO.findDirectConversationBetweenUsers(user2Id, user1Id);
+        if (existingReverse.isPresent()) {
+            log.info("Found existing direct conversation (reverse order): {}", existingReverse.get().getConversationId());
+            // Get the conversation from the direct conversation
+            Conversation conversation = existingReverse.get().getConversation();
+            return convertToDTO(conversation, user1Id);
         }
 
         log.info("No existing conversation found, creating new one");
@@ -250,6 +323,22 @@ public class ConversationServiceImpl implements ConversationService {
 
         Conversation conversation = conversationDAO.findById(conversationId)
                 .orElseThrow(() -> new RuntimeException("Conversation not found"));
+
+        // For direct conversations, check if users are friends
+        if (conversation.getType() == Conversation.ConversationType.direct) {
+            // Get existing members
+            List<ConversationMember> existingMembers = conversationMemberDAO.findByConversationId(conversationId);
+            if (existingMembers.size() >= 2) {
+                throw new RuntimeException("Direct conversation already has 2 members");
+            }
+            
+            // Check if the new member is friends with existing members
+            for (ConversationMember existingMember : existingMembers) {
+                if (!friendshipDAO.areFriends(existingMember.getUser().getId(), newMemberId)) {
+                    throw new RuntimeException("Cannot add non-friend user to direct conversation");
+                }
+            }
+        }
 
         ConversationMember member = ConversationMember.builder()
                 .id(new ConversationMemberId(conversationId, newMemberId))
@@ -394,7 +483,30 @@ public class ConversationServiceImpl implements ConversationService {
     @Override
     @Transactional(readOnly = true)
     public boolean isUserMember(UUID conversationId, UUID userId) {
-        return conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId);
+        boolean isMember = conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId);
+        
+        if (!isMember) {
+            return false;
+        }
+
+        // For direct conversations, also check if users are friends
+        Conversation conversation = conversationDAO.findById(conversationId).orElse(null);
+        if (conversation != null && conversation.getType() == Conversation.ConversationType.direct) {
+            // Get the other user in the direct conversation
+            List<ConversationMember> members = conversationMemberDAO.findByConversationId(conversationId);
+            UUID otherUserId = members.stream()
+                    .map(member -> member.getUser().getId())
+                    .filter(id -> !id.equals(userId))
+                    .findFirst()
+                    .orElse(null);
+
+            if (otherUserId != null) {
+                // Check if users are friends
+                return friendshipDAO.areFriends(userId, otherUserId);
+            }
+        }
+
+        return isMember;
     }
 
     @Override

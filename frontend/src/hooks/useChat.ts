@@ -35,6 +35,23 @@ export const useChat = () => {
         .then(() => {
           setIsConnected(true);
           console.log('WebSocket connected');
+          
+          // Subscribe to conversation updates
+          websocketService.subscribeToUserConversations((conversation) => {
+            console.log('Received conversation update:', conversation);
+            setConversations(prev => {
+              const existingIndex = prev.findIndex(conv => conv.id === conversation.id);
+              if (existingIndex >= 0) {
+                // Update existing conversation
+                return prev.map(conv =>
+                  conv.id === conversation.id ? conversation : conv
+                );
+              } else {
+                // Add new conversation to the beginning
+                return [conversation, ...prev];
+              }
+            });
+          });
         })
         .catch((error) => {
           console.error('WebSocket connection failed:', error);
@@ -219,11 +236,21 @@ export const useChat = () => {
 
     setMessages([]);
 
-    setConversations(prev => prev.map(conv =>
-      conv.id === conversation.id
-        ? { ...conv, unreadCount: 0 }
-        : conv
-    ));
+    // Update conversations list - add new conversation if not exists, or update existing one
+    setConversations(prev => {
+      const existingIndex = prev.findIndex(conv => conv.id === conversation.id);
+      if (existingIndex >= 0) {
+        // Update existing conversation
+        return prev.map(conv =>
+          conv.id === conversation.id
+            ? { ...conv, unreadCount: 0 }
+            : conv
+        );
+      } else {
+        // Add new conversation to the beginning of the list
+        return [conversation, ...prev];
+      }
+    });
 
     websocketService.joinConversation(conversation.id);
 

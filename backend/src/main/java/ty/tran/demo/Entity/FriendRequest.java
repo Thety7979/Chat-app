@@ -14,14 +14,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.*;
 
 @Entity
-@Table(name = "friend_requests",
-       uniqueConstraints = {
-           @UniqueConstraint(columnNames = {"sender_id", "receiver_id"})
-       })
+@Table(name = "friend_requests")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -42,6 +38,7 @@ public class FriendRequest {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
+    @Builder.Default
     private RequestStatus status = RequestStatus.pending;
 
     @Column(name = "message")

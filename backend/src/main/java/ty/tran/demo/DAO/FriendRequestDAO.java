@@ -31,7 +31,14 @@ public interface FriendRequestDAO extends JpaRepository<FriendRequest, UUID> {
     @Query("SELECT COUNT(fr) FROM FriendRequest fr WHERE fr.receiver.id = :userId AND fr.status = 'pending'")
     long countPendingRequestsByUserId(@Param("userId") UUID userId);
 
-    // Kiểm tra đã gửi lời mời kết bạn chưa
+    // Kiểm tra đã gửi lời mời kết bạn chưa (chỉ pending)
     @Query("SELECT COUNT(fr) > 0 FROM FriendRequest fr WHERE fr.sender.id = :senderId AND fr.receiver.id = :receiverId AND fr.status = 'pending'")
     boolean hasPendingRequest(@Param("senderId") UUID senderId, @Param("receiverId") UUID receiverId);
+
+    // Kiểm tra đã có friend request nào giữa 2 user chưa (trừ canceled)
+    @Query("SELECT COUNT(fr) > 0 FROM FriendRequest fr WHERE " +
+           "((fr.sender.id = :senderId AND fr.receiver.id = :receiverId) OR " +
+           "(fr.sender.id = :receiverId AND fr.receiver.id = :senderId)) AND " +
+           "fr.status != 'canceled'")
+    boolean hasAnyFriendRequest(@Param("senderId") UUID senderId, @Param("receiverId") UUID receiverId);
 }

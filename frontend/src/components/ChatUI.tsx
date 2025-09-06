@@ -32,7 +32,8 @@ const ChatUI: React.FC = () => {
     friends,
     pendingCount,
     loadFriends,
-    searchUsers
+    searchUsers,
+    searchFriends
   } = useFriends();
 
   const [message, setMessage] = useState<string>('');
@@ -89,7 +90,8 @@ const ChatUI: React.FC = () => {
 
       setIsSearching(true);
       try {
-        const friendResults = await searchUsers(searchQuery);
+        // Chỉ tìm kiếm trong danh sách bạn bè, không tìm tất cả người dùng
+        const friendResults = await searchFriends(searchQuery);
 
         const combinedResults = [
           ...friendResults.map(friend => ({ ...friend, type: 'friend' }))
@@ -106,7 +108,7 @@ const ChatUI: React.FC = () => {
 
     const timeoutId = setTimeout(performSearch, 300);
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, searchUsers]);
+  }, [searchQuery, searchFriends]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

@@ -12,6 +12,7 @@ class WebSocketService {
   private subscriptions: Map<string, any> = new Map();
   private currentUserId: string | null = null;
   private receivedMessageIds: Set<string> = new Set();
+  private friendRequestHandlers: Map<string, (data: any) => void> = new Map();
 
   connect(userId: string, token?: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -515,6 +516,40 @@ class WebSocketService {
     console.log('Re-subscribing to all previous subscriptions...');
     this.subscriptions.clear();
     this.receivedMessageIds.clear();
+  }
+
+  // Friend Request WebSocket Methods
+  subscribeToFriendRequests(handler: (data: any) => void): void {
+    if (!this.client || !this.isConnected) {
+      console.error('WebSocket not connected, cannot subscribe to friend requests');
+      return;
+    }
+
+    const subscriptionId = `friend-requests-${Date.now()}`;
+    this.friendRequestHandlers.set(subscriptionId, handler);
+
+    const subscription = this.client.subscribe('/user/queue/friend-requests', (message) => {
+      try {
+        const data = JSON.parse(message.body);
+        console.log('Friend request event received:', data);
+        handler(data);
+      } catch (error) {
+        console.error('Failed to parse friend request message:', error);
+      }
+    });
+
+    this.subscriptions.set(subscriptionId, subscription);
+    console.log('Subscribed to friend requests');
+  }
+
+  unsubscribeFromFriendRequests(subscriptionId: string): void {
+    const subscription = this.subscriptions.get(subscriptionId);
+    if (subscription) {
+      subscription.unsubscribe();
+      this.subscriptions.delete(subscriptionId);
+      this.friendRequestHandlers.delete(subscriptionId);
+      console.log('Unsubscribed from friend requests');
+    }
   }
 }
 

@@ -30,15 +30,14 @@ public class MessageServiceImpl implements MessageService {
     private final MessageReadDAO messageReadDAO;
     private final MessageAttachmentDAO messageAttachmentDAO;
     private final UserDAO userDAO;
+    private final FriendshipDAO friendshipDAO;
     private final SimpMessagingTemplate messagingTemplate;
     // Removed circular dependency - will use direct DAO access
 
     @Override
     public MessageDTO sendMessage(UUID senderId, SendMessageRequest request) {
-        // Validate user is member of conversation
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(request.getConversationId(), senderId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can send message in this conversation (includes friendship check for direct conversations)
+        validateUserCanSendMessage(request.getConversationId(), senderId);
 
         // Get conversation and sender
         Conversation conversation = conversationDAO.findById(request.getConversationId())
@@ -109,10 +108,8 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional(readOnly = true)
     public Page<MessageDTO> getMessages(UUID conversationId, UUID userId, Pageable pageable) {
-        // Validate user is member
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(conversationId, userId);
 
         log.info("MessageServiceImpl: Getting messages for conversation {} with sort={}", 
             conversationId, pageable.getSort());
@@ -129,10 +126,8 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional(readOnly = true)
     public List<MessageDTO> getMessagesAfter(UUID conversationId, UUID userId, Instant after) {
-        // Validate user is member
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(conversationId, userId);
 
         List<Message> messages = messageDAO.findMessagesAfter(conversationId, after);
         return messages.stream().map(this::convertToDTO).collect(Collectors.toList());
@@ -144,10 +139,8 @@ public class MessageServiceImpl implements MessageService {
         Message message = messageDAO.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
-        // Validate user is member of conversation
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(message.getConversation().getId(), userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(message.getConversation().getId(), userId);
 
         return convertToDTO(message);
     }
@@ -162,10 +155,8 @@ public class MessageServiceImpl implements MessageService {
             throw new RuntimeException("User can only edit their own messages");
         }
 
-        // Validate user is member of conversation
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(message.getConversation().getId(), userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(message.getConversation().getId(), userId);
 
         message.setContent(newContent);
         message.setEditedAt(Instant.now());
@@ -196,10 +187,8 @@ public class MessageServiceImpl implements MessageService {
             throw new RuntimeException("User can only delete their own messages or must be admin");
         }
 
-        // Validate user is member of conversation
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(message.getConversation().getId(), userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(message.getConversation().getId(), userId);
 
         message.setDeletedAt(Instant.now());
         messageDAO.save(message);
@@ -215,10 +204,8 @@ public class MessageServiceImpl implements MessageService {
         Message message = messageDAO.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
-        // Validate user is member of conversation
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(message.getConversation().getId(), userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(message.getConversation().getId(), userId);
 
         // Check if already read
         MessageReadId readId = new MessageReadId(messageId, userId);
@@ -246,10 +233,8 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public void markConversationAsRead(UUID conversationId, UUID userId) {
-        // Validate user is member
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(conversationId, userId);
 
         // Get last message
         Optional<Message> lastMessage = messageDAO.findFirstByConversationIdOrderByCreatedAtDesc(conversationId);
@@ -261,10 +246,8 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional(readOnly = true)
     public long getUnreadCount(UUID conversationId, UUID userId) {
-        // Validate user is member
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(conversationId, userId);
 
         // Get last read message timestamp
         ConversationMember member = conversationMemberDAO.findByConversationIdAndUserId(conversationId, userId)
@@ -284,10 +267,8 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional(readOnly = true)
     public List<MessageDTO> searchMessages(UUID conversationId, UUID userId, String searchTerm) {
-        // Validate user is member
-        if (!conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new RuntimeException("User is not a member of this conversation");
-        }
+        // Validate user can access this conversation (includes friendship check for direct conversations)
+        validateUserCanAccessConversation(conversationId, userId);
 
         // This would require a custom query - simplified for now
         List<Message> messages = messageDAO.findByConversationIdOrderByCreatedAtDesc(conversationId, Pageable.unpaged())
@@ -341,5 +322,65 @@ public class MessageServiceImpl implements MessageService {
                 .durationMs(attachment.getDurationMs())
                 .sha256(attachment.getSha256())
                 .build();
+    }
+
+    /**
+     * Validates that a user can send messages in a conversation.
+     * For direct conversations, also checks if users are friends.
+     */
+    private void validateUserCanSendMessage(UUID conversationId, UUID userId) {
+        // First check if user is member of conversation
+        if (!conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId)) {
+            throw new RuntimeException("User is not a member of this conversation");
+        }
+
+        // For direct conversations, check if users are friends
+        Conversation conversation = conversationDAO.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found"));
+
+        if (conversation.getType() == Conversation.ConversationType.direct) {
+            // Get the other user in the direct conversation
+            List<ConversationMember> members = conversationMemberDAO.findByConversationId(conversationId);
+            UUID otherUserId = members.stream()
+                    .map(member -> member.getUser().getId())
+                    .filter(id -> !id.equals(userId))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Invalid direct conversation"));
+
+            // Check if users are friends
+            if (!friendshipDAO.areFriends(userId, otherUserId)) {
+                throw new RuntimeException("Cannot send messages to non-friend users");
+            }
+        }
+    }
+
+    /**
+     * Validates that a user can access a conversation.
+     * For direct conversations, also checks if users are friends.
+     */
+    private void validateUserCanAccessConversation(UUID conversationId, UUID userId) {
+        // First check if user is member of conversation
+        if (!conversationMemberDAO.existsByConversationIdAndUserId(conversationId, userId)) {
+            throw new RuntimeException("User is not a member of this conversation");
+        }
+
+        // For direct conversations, check if users are friends
+        Conversation conversation = conversationDAO.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found"));
+
+        if (conversation.getType() == Conversation.ConversationType.direct) {
+            // Get the other user in the direct conversation
+            List<ConversationMember> members = conversationMemberDAO.findByConversationId(conversationId);
+            UUID otherUserId = members.stream()
+                    .map(member -> member.getUser().getId())
+                    .filter(id -> !id.equals(userId))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Invalid direct conversation"));
+
+            // Check if users are friends
+            if (!friendshipDAO.areFriends(userId, otherUserId)) {
+                throw new RuntimeException("Cannot access conversation with non-friend users");
+            }
+        }
     }
 }

@@ -34,11 +34,11 @@ public class FriendRequestServiceImpl implements FriendRequestService {
         System.out.println("=== FRIEND REQUEST DEBUG START ===");
         System.out.println("DEBUG - sendFriendRequest: senderId=" + senderId + ", receiverId=" + request.getReceiverId());
         
-        // Kiểm tra đã gửi lời mời chưa
-        boolean hasPending = friendRequestDAO.hasPendingRequest(senderId, request.getReceiverId());
-        System.out.println("DEBUG - hasPendingRequest: " + hasPending);
-        if (hasPending) {
-            throw new RuntimeException("Đã gửi lời mời kết bạn cho người này rồi");
+        // Kiểm tra đã có friend request pending giữa 2 user chưa
+        boolean hasPendingRequest = friendRequestDAO.hasPendingRequest(senderId, request.getReceiverId());
+        System.out.println("DEBUG - hasPendingRequest: " + hasPendingRequest);
+        if (hasPendingRequest) {
+            throw new RuntimeException("Đã có lời mời kết bạn đang chờ phản hồi giữa hai người này rồi");
         }
 
         // Kiểm tra đã là bạn bè chưa

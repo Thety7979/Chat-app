@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import friendApi from '../api/friendApi';
+import websocketService from '../services/websocketService';
 import { Friend, FriendRequest, SearchUser, SendFriendRequestRequest, RespondFriendRequestRequest } from '../types/friend';
 
 export const useFriends = () => {
@@ -93,17 +94,19 @@ export const useFriends = () => {
     try {
       const updatedRequest = await friendApi.respondToFriendRequest(request);
       
-      // Update received requests
-      setReceivedRequests(prev => 
-        prev.map(req => req.id === request.requestId ? updatedRequest : req)
-      );
+      // Remove from received requests (since it's been processed)
+      setReceivedRequests(prev => prev.filter(req => req.id !== request.requestId));
 
-      // If accepted, add to friends list
+      // If accepted, add to friends list and reload to ensure consistency
       if (request.status === 'accepted') {
         const newFriend = updatedRequest.sender;
         setFriends(prev => [...prev, newFriend]);
+        // Reload friends list to ensure consistency
+        await loadFriends();
       }
 
+      // Reload sent requests to update the other user's view
+      await loadSentRequests();
       // Update pending count
       await loadPendingCount();
       
@@ -113,18 +116,22 @@ export const useFriends = () => {
       setError(error.message);
       throw error;
     }
-  }, [loadPendingCount]);
+  }, [loadPendingCount, loadFriends, loadSentRequests]);
 
   // Cancel friend request
   const cancelFriendRequest = useCallback(async (requestId: string) => {
     try {
       await friendApi.cancelFriendRequest(requestId);
       setSentRequests(prev => prev.filter(req => req.id !== requestId));
+      // Reload received requests to update the other user's view
+      await loadReceivedRequests();
+      // Reload pending count
+      await loadPendingCount();
     } catch (error: any) {
       console.error('Failed to cancel friend request:', error);
       setError(error.message);
     }
-  }, []);
+  }, [loadReceivedRequests, loadPendingCount]);
 
   // Remove friend
   const removeFriend = useCallback(async (friendId: string) => {
@@ -176,6 +183,24 @@ export const useFriends = () => {
       loadSentRequests();
       loadReceivedRequests();
       loadPendingCount();
+
+      // Subscribe to friend request events
+      const friendRequestHandler = (data: any) => {
+        console.log('Friend request event received:', data);
+        // Reload all data when friend request events occur
+        loadFriends();
+        loadSentRequests();
+        loadReceivedRequests();
+        loadPendingCount();
+      };
+
+      websocketService.subscribeToFriendRequests(friendRequestHandler);
+
+      // Cleanup subscription on unmount
+      return () => {
+        // Note: We can't easily track subscription ID here, but it's okay for now
+        // In a production app, you'd want to track subscription IDs properly
+      };
     }
   }, [user?.id, loadFriends, loadSentRequests, loadReceivedRequests, loadPendingCount]);
 

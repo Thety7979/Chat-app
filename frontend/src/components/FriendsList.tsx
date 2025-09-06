@@ -21,11 +21,8 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend }) => {
         setIsStartingChat(friend.id);
         const conversation = await chatApi.getOrCreateDirectConversation(friend.id);
         
-        // Select the conversation
+        // Select the conversation (this will also add it to the conversations list)
         selectConversation(conversation);
-        
-        // Reload conversations to update the list
-        await loadConversations();
         
         // Switch back to chats view
         // This would need to be passed as a prop or handled by parent

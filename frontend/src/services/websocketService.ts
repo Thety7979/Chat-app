@@ -13,6 +13,7 @@ class WebSocketService {
   private currentUserId: string | null = null;
   private receivedMessageIds: Set<string> = new Set();
   private friendRequestHandlers: Map<string, (data: any) => void> = new Map();
+  private callEventHandlers: Map<string, (data: any) => void> = new Map();
 
   connect(userId: string, token?: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -474,6 +475,11 @@ class WebSocketService {
     }
   }
 
+  // Explicit API to publish presence leave when navigating away/closing
+  sendPresenceLeave(conversationId: string): void {
+    this.leaveConversation(conversationId);
+  }
+
   unsubscribe(destination: string): void {
     if (this.client && this.isConnected) {
       const subscription = this.subscriptions.get(destination);
@@ -594,6 +600,155 @@ class WebSocketService {
       this.subscriptions.delete(subscriptionId);
       this.friendRequestHandlers.delete(subscriptionId);
       console.log('Unsubscribed from friend requests');
+    }
+  }
+
+  // Call Event WebSocket Methods
+  async subscribeToCallEvents(handler: (data: any) => void): Promise<void> {
+    if (!this.client) {
+      console.error('WebSocket client not initialized, cannot subscribe to call events');
+      return;
+    }
+
+    // Wait for connection to be established
+    const connected = await this.waitForConnection();
+    if (!connected) {
+      console.error('WebSocket connection timeout, cannot subscribe to call events');
+      return;
+    }
+
+    // Check if we already have a call events subscription
+    const existingSubscription = Array.from(this.subscriptions.keys()).find(key => key.startsWith('call-events-'));
+    if (existingSubscription) {
+      console.log('WebSocket Service - Call events subscription already exists, adding handler to existing subscription...');
+      this.callEventHandlers.set(`call-events-${Date.now()}`, handler);
+      return;
+    }
+
+    try {
+      const subscriptionId = `call-events-${Date.now()}`;
+      this.callEventHandlers.set(subscriptionId, handler);
+
+      const subscription = this.client.subscribe('/user/queue/call-events', (message) => {
+        try {
+          console.log('WebSocket Service - Raw message received on call-events subscription:', message);
+          console.log('WebSocket Service - Message body:', message.body);
+          console.log('WebSocket Service - Message headers:', message.headers);
+          
+          const data = JSON.parse(message.body);
+          console.log('WebSocket Service - Call event received:', data);
+          console.log('WebSocket Service - Event type:', data.type);
+          console.log('WebSocket Service - Event data:', JSON.stringify(data, null, 2));
+          console.log('WebSocket Service - Current user ID:', this.currentUserId);
+          console.log('WebSocket Service - Caller ID from event:', data.callerId);
+          console.log('WebSocket Service - Callee ID from event:', data.calleeId);
+          
+          // Deliver events when current user participates as caller or callee
+          const currentId = String(this.currentUserId);
+          const eventCaller = String(data.callerId);
+          const eventCallee = String(data.calleeId);
+          const isParticipant = currentId === eventCaller || currentId === eventCallee;
+
+          if (isParticipant) {
+            console.log('WebSocket Service - Current user is a participant, processing event...');
+            handler(data);
+          } else {
+            console.log('WebSocket Service - Current user not a participant of this call event, ignoring');
+          }
+        } catch (error) {
+          console.error('WebSocket Service - Failed to parse call event message:', error);
+          console.error('WebSocket Service - Raw message body:', message.body);
+        }
+      });
+
+      this.subscriptions.set(subscriptionId, subscription);
+      console.log('Subscribed to call events');
+      console.log('WebSocket Service - Subscription details:');
+      console.log('  - Current user ID:', this.currentUserId);
+      console.log('  - Current user ID type:', typeof this.currentUserId);
+      console.log('  - Subscription ID:', subscriptionId);
+      console.log('  - Is connected:', this.isConnected);
+      console.log('  - Client state:', this.client?.connected);
+      console.log('  - Subscription destination: /user/queue/call-events');
+      
+      // Also subscribe to the topic for testing
+      const topicSubscriptionId = `call-events-topic-${Date.now()}`;
+      const topicSubscription = this.client.subscribe(`/topic/call-events/${this.currentUserId}`, (message) => {
+        try {
+          console.log('WebSocket Service - Raw message received on call-events topic subscription:', message);
+          console.log('WebSocket Service - Topic message body:', message.body);
+          
+          const data = JSON.parse(message.body);
+          console.log('WebSocket Service - Topic call event received:', data);
+          console.log('WebSocket Service - Topic event type:', data.type);
+          
+          // Process the event
+          handler(data);
+        } catch (error) {
+          console.error('WebSocket Service - Failed to parse topic call event message:', error);
+        }
+      });
+      
+      this.subscriptions.set(topicSubscriptionId, topicSubscription);
+      console.log('Also subscribed to call events topic:', `/topic/call-events/${this.currentUserId}`);
+      
+      // Test the subscription by sending a test message
+      setTimeout(() => {
+        console.log('WebSocket Service - Testing subscription by sending test message...');
+        this.sendCallEvent({
+          type: 'test',
+          message: 'This is a test message to verify subscription is working',
+          timestamp: new Date().toISOString()
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to subscribe to call events:', error);
+      // If subscription fails, we can try to retry after a delay
+      setTimeout(() => {
+        console.log('Retrying call event subscription...');
+        this.subscribeToCallEvents(handler).catch(err => {
+          console.error('Retry failed:', err);
+        });
+      }, 2000);
+    }
+  }
+
+  sendCallEvent(event: any): void {
+    if (!this.client) {
+      console.error('WebSocket client not initialized, cannot send call event');
+      return;
+    }
+
+    if (!this.isConnected) {
+      console.error('WebSocket not connected, cannot send call event');
+      return;
+    }
+
+    const destination = '/app/call';
+    try {
+      console.log('WebSocket Service - Sending call event to:', destination);
+      console.log('WebSocket Service - Event data:', JSON.stringify(event, null, 2));
+      this.client.publish({
+        destination,
+        body: JSON.stringify(event)
+      });
+      console.log('WebSocket Service - Call event sent successfully to:', destination);
+    } catch (error) {
+      console.error('WebSocket Service - Failed to send call event:', error);
+    }
+  }
+
+  getCurrentUserId(): string | null {
+    return this.currentUserId;
+  }
+
+  unsubscribeFromCallEvents(subscriptionId: string): void {
+    const subscription = this.subscriptions.get(subscriptionId);
+    if (subscription) {
+      subscription.unsubscribe();
+      this.subscriptions.delete(subscriptionId);
+      this.callEventHandlers.delete(subscriptionId);
+      console.log('Unsubscribed from call events');
     }
   }
 }

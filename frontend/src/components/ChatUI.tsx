@@ -3,12 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useChat } from '../hooks/useChat';
 import { useFriends } from '../hooks/useFriends';
+import { useCall } from '../hooks/useCall';
+import { useCallHistory } from '../hooks/useCallHistory';
 import FriendRequestModal from './FriendRequestModal';
 import AddFriendModal from './AddFriendModal';
 import FriendsList from './FriendsList';
 import MessagePopupMenu from './MessagePopupMenu';
+import CallModal from './CallModal';
+import ConfirmDialog from './ConfirmDialog';
+import IncomingCallNotification from './IncomingCallNotification';
+import CallHistoryMessage from './CallHistoryMessage';
 import chatApi from '../api/chatApi';
 import '../assets/css/ChatUI.css';
+import websocketService from '../services/websocketService';
 
 const ChatUI: React.FC = () => {
   const { user, logout } = useAuth();
@@ -36,6 +43,29 @@ const ChatUI: React.FC = () => {
     searchFriends
   } = useFriends();
 
+  const {
+    callState,
+    isCallModalOpen,
+    callerName,
+    callerInfo,
+    showIncomingCallNotification,
+    startCall,
+    acceptCall,
+    rejectCall,
+    endCall,
+    toggleMute,
+    closeCallModal
+  } = useCall();
+
+  const {
+    callHistory,
+    isLoading: isCallHistoryLoading,
+    error: callHistoryError,
+    addCallToHistory,
+    updateCallInHistory,
+    loadCallHistory
+  } = useCallHistory(currentConversation?.id || null);
+
   const [message, setMessage] = useState<string>('');
   const [isCalling, setIsCalling] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
@@ -45,10 +75,13 @@ const ChatUI: React.FC = () => {
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [showFriendRequestModal, setShowFriendRequestModal] = useState<boolean>(false);
   const [showAddFriendModal, setShowAddFriendModal] = useState<boolean>(false);
+  const [showCallAlert, setShowCallAlert] = useState<boolean>(false);
+  const [callAlertMessage, setCallAlertMessage] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showMoreMenu, setShowMoreMenu] = useState<string | null>(null);
+  const [presenceText, setPresenceText] = useState<string>('');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const likeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -192,11 +225,36 @@ const ChatUI: React.FC = () => {
   };
 
   const handleCall = (type: 'voice' | 'video') => {
-    setIsCalling(true);
-    setTimeout(() => {
-      setIsCalling(false);
-      alert(`${type === 'voice' ? 'Cuộc gọi thoại' : 'Cuộc gọi video'} đang được kết nối...`);
-    }, 1000);
+    console.log('ChatUI - handleCall called with type:', type);
+    console.log('ChatUI - currentContact:', currentContact);
+    if (currentContact) {
+      console.log('ChatUI - Starting call to:', currentContact.id);
+      startCall(currentContact.id);
+    } else {
+      console.log('ChatUI - No current contact to call');
+    }
+  };
+
+  const handleCallBack = async (callId: string) => {
+    try {
+      if (!currentConversation) return;
+      
+      // Find the call to get the other participant
+      const call = callHistory.find(c => c.id === callId);
+      if (!call) return;
+      
+      // Determine who to call back
+      const otherParticipantId = call.initiatorId === user?.id ? 
+        currentConversation.members.find((member: any) => member.userId !== user?.id)?.userId :
+        call.initiatorId;
+      
+      if (otherParticipantId) {
+        await startCall(otherParticipantId);
+        setIsCalling(true);
+      }
+    } catch (error) {
+      console.error('Error calling back:', error);
+    }
   };
 
   const handleSearchResultClick = async (result: any) => {
@@ -208,7 +266,8 @@ const ChatUI: React.FC = () => {
         setSearchResults([]);
       } catch (error) {
         console.error('Failed to start conversation with friend:', error);
-        alert(`Không thể bắt đầu trò chuyện với ${result.displayName || result.email}`);
+        setCallAlertMessage(`Không thể bắt đầu trò chuyện với ${result.displayName || result.email}`);
+        setShowCallAlert(true);
       }
     }
   };
@@ -236,7 +295,100 @@ const ChatUI: React.FC = () => {
 
   const currentContact = getCurrentContact();
 
+  // Helper: format thời gian tương đối
+  const formatLastSeen = (iso?: string) => {
+    if (!iso) return '';
+    const ts = new Date(iso).getTime();
+    const now = Date.now();
+    const diff = Math.max(0, now - ts);
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'vừa xong';
+    if (m < 60) return `${m} phút trước`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} giờ trước`;
+    const d = Math.floor(h / 24);
+    return `${d} ngày trước`;
+  };
 
+  // Khởi tạo trạng thái hiện thị hoạt động theo cuộc trò chuyện hiện tại
+  useEffect(() => {
+    if (!currentConversation) return;
+    if (currentConversation.type === 'direct') {
+      const otherMember = currentConversation.members.find(m => m.userId !== user?.id);
+      if (otherMember?.isOnline) {
+        setPresenceText('Đang hoạt động');
+      } else {
+        setPresenceText(`Hoạt động ${formatLastSeen(otherMember?.lastSeenAt)}`);
+      }
+    } else {
+      setPresenceText('');
+    }
+  }, [currentConversation?.id, user?.id]);
+
+  // Cập nhật lại trạng thái hoạt động khi server đẩy bản cập nhật cuộc trò chuyện
+  useEffect(() => {
+    if (!currentConversation) return;
+    const latest = conversations.find(c => c.id === currentConversation.id);
+    if (!latest || latest.type !== 'direct') return;
+    const other = latest.members.find(m => m.userId !== user?.id);
+    if (!other) return;
+    setPresenceText(other.isOnline ? 'Đang hoạt động' : `Hoạt động ${formatLastSeen(other.lastSeenAt)}`);
+  }, [conversations, currentConversation?.id, user?.id]);
+
+  // Lắng nghe cập nhật hiện diện real-time
+  useEffect(() => {
+    if (!currentConversation) return;
+    const otherMemberId = currentConversation.type === 'direct'
+      ? currentConversation.members.find(m => m.userId !== user?.id)?.userId
+      : undefined;
+    if (!otherMemberId) return;
+
+    const handlePresence = (update: any) => {
+      if (update.userId !== otherMemberId) return;
+      if (update.status === 'online') {
+        setPresenceText('Đang hoạt động');
+      } else {
+        const iso = new Date(update.timestamp).toISOString();
+        setPresenceText(`Hoạt động ${formatLastSeen(iso)}`);
+      }
+    };
+
+    websocketService.subscribeToPresence(currentConversation.id, handlePresence);
+    return () => {
+      websocketService.unsubscribe(`/topic/conversation/${currentConversation.id}/presence`);
+    };
+  }, [currentConversation?.id, user?.id]);
+
+  // Refresh call history immediately after a call ends (no manual reload needed)
+  useEffect(() => {
+    // Only trigger when we actually have a conversation selected
+    if (!currentConversation) return;
+
+    // When a call ends, callState.isInCall becomes false
+    if (callState && callState.isInCall === false) {
+      loadCallHistory();
+    }
+  }, [callState.isInCall, currentConversation?.id, loadCallHistory]);
+
+  // Hide "Đang kết nối..." popup when call starts, incoming modal shows, or call ends
+  useEffect(() => {
+    if (callState.isInCall || isCallModalOpen || !callState.isInCall) {
+      // Either a call is in progress (modal will take over) or it has ended
+      if (isCalling) setIsCalling(false);
+    }
+  }, [callState.isInCall, isCallModalOpen]);
+
+  // Debug logging for call notifications
+  useEffect(() => {
+    if (showIncomingCallNotification) {
+      console.log('ChatUI - Incoming call notification should be visible:', {
+        isVisible: showIncomingCallNotification,
+        callerInfo,
+        callerName,
+        finalName: callerInfo?.name || callerName || 'Unknown'
+      });
+    }
+  }, [showIncomingCallNotification, callerInfo, callerName]);
 
   const sidebarItems = [
     { id: 'chats', label: 'Cuộc trò chuyện', icon: 'fas fa-comments' },
@@ -248,9 +400,6 @@ const ChatUI: React.FC = () => {
     { id: 'notifications', label: 'Thông báo', icon: 'fas fa-bell' },
     { id: 'help', label: 'Trợ giúp', icon: 'fas fa-question-circle' }
   ];
-
-  // Debug: Log friends count changes
-  console.log('ChatUI - Friends count:', friends.length, 'Friends:', friends.map(f => f.displayName || f.email));
 
   return (
     <div className="chat-container bg-[#f9fafc] h-screen flex font-sans text-sm text-[#1a1a1a] overflow-hidden">
@@ -697,7 +846,7 @@ const ChatUI: React.FC = () => {
                       <h3 className="font-extrabold text-sm text-[#1a1a1a] leading-5">
                         {currentContact?.name}
                       </h3>
-                      <p className="text-xs text-[#6b7280]">Hoạt động 3 giờ trước</p>
+                      <p className="text-xs text-[#6b7280]">{presenceText}</p>
                     </div>
                   </>
                 )}
@@ -764,127 +913,151 @@ const ChatUI: React.FC = () => {
                     </div>
                   ) : (
                     <>
-                      {messages.map((msg, index) => {
-                        const isOutgoing = msg.senderId === user?.id;
-                        const messageTime = new Date(msg.createdAt).toLocaleTimeString('vi-VN', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false
-                        });
-                        const fullDateTime = new Date(msg.createdAt).toLocaleString('vi-VN', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false
-                        });
+                      {(() => {
+                        const timelineItems = [
+                          ...messages.map((m) => ({ type: 'message' as const, time: m.createdAt, data: m })),
+                          ...callHistory.map((c) => ({ type: 'call' as const, time: c.createdAt || c.startedAt || c.endedAt, data: c }))
+                        ]
+                        .filter(item => !!item.time)
+                        .sort((a, b) => new Date(a.time as string).getTime() - new Date(b.time as string).getTime());
 
-                        const isOptimisticMessage = msg.id.startsWith('temp-');
-                        const isNewMessage = index === messages.length - 1;
-                        const isFromCache = !isLoading;
-                        const shouldDisableAnimation = isOptimisticMessage || isNewMessage || isFromCache || justSelectedConversation;
+                        return timelineItems.map((item, index) => {
+                          if (item.type === 'message') {
+                            const msg = item.data;
+                            const isOutgoing = msg.senderId === user?.id;
+                            const fullDateTime = new Date(msg.createdAt).toLocaleString('vi-VN', {
+                              weekday: 'long',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: false
+                            });
 
-                          return (
-                            <motion.div
-                              key={msg.id}
-                              className={`flex items-end gap-2 mb-2 group/message ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}
-                              initial={shouldDisableAnimation ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={shouldDisableAnimation ? { duration: 0 } : { delay: 0.4 + index * 0.1 }}
-                              onMouseEnter={() => {
-                                // Close popup when hovering over a different message
-                                if (showMoreMenu && showMoreMenu !== msg.id) {
-                                  setShowMoreMenu(null);
-                                }
-                              }}
-                            >
-                            {!isOutgoing && (
-                              <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                                <img
-                                  src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'}
-                                  alt="Avatar"
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                            )}
+                            const isOptimisticMessage = msg.id.startsWith('temp-');
+                            const isNewMessage = index === messages.length - 1;
+                            const isFromCache = !isLoading;
+                            const shouldDisableAnimation = isOptimisticMessage || isNewMessage || isFromCache || justSelectedConversation;
 
-                            <div className={`flex items-end gap-2 ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}>
-                              <div className={`max-w-[70%] ${isOutgoing ? 'ml-auto' : ''}`}>
-                                {isOutgoing ? (
-                                  <div className={`bg-[#3b82f6] rounded-2xl rounded-br-md p-3 text-white group relative ${isOptimisticMessage ? 'opacity-80' : ''}`}>
-                                    <p className="text-sm leading-5">{msg.content}</p>
-                                    {isOptimisticMessage && (
-                                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white/30 rounded-full flex items-center justify-center">
-                                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
-                                      </div>
-                                    )}
-                                    <div className="absolute top-1/2 -left-2 transform -translate-y-1/2 -translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                                      {fullDateTime}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="bg-[#f1f3f4] rounded-2xl rounded-bl-md p-3 group relative">
-                                    <p className="text-sm text-[#1a1a1a] leading-5">{msg.content}</p>
-                                    <div className="absolute top-1/2 -right-2 transform -translate-y-1/2 translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                                      {fullDateTime}
-                                    </div>
+                            return (
+                              <motion.div
+                                key={`msg-${msg.id}`}
+                                className={`flex items-end gap-2 mb-2 group/message ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}
+                                initial={shouldDisableAnimation ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={shouldDisableAnimation ? { duration: 0 } : { delay: 0.4 + index * 0.1 }}
+                                onMouseEnter={() => {
+                                  if (showMoreMenu && showMoreMenu !== msg.id) {
+                                    setShowMoreMenu(null);
+                                  }
+                                }}
+                              >
+                                {!isOutgoing && (
+                                  <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                                    <img
+                                      src={currentContact?.avatarUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjQiIGZpbGw9IiMzYjgyZjYiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMFYyMkgxOFYyMEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+'}
+                                      alt="Avatar"
+                                      className="w-full h-full object-cover"
+                                    />
                                   </div>
                                 )}
-                              </div>
 
-                              <div className={`flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200 ${isOutgoing ? 'mr-2' : 'ml-2'}`}>
-                                <button
-                                  onClick={() => handleReplyToMessage(msg)}
-                                  className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
-                                  title="Trả lời"
-                                >
-                                  <i className="fas fa-reply text-sm"></i>
-                                </button>
+                                <div className={`flex items-end gap-2 ${isOutgoing ? 'flex-row-reverse' : 'flex-row'}`}>
+                                  <div className={`max-w-[70%] ${isOutgoing ? 'ml-auto' : ''}`}>
+                                    {isOutgoing ? (
+                                      <div className={`bg-[#3b82f6] rounded-2xl rounded-br-md p-3 text-white group relative ${isOptimisticMessage ? 'opacity-80' : ''}`}>
+                                        <p className="text-sm leading-5">{msg.content}</p>
+                                        {isOptimisticMessage && (
+                                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white/30 rounded-full flex items-center justify-center">
+                                            <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
+                                          </div>
+                                        )}
+                                        <div className="absolute top-1/2 -left-2 transform -translate-y-1/2 -translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                          {fullDateTime}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="bg-[#f1f3f4] rounded-2xl rounded-bl-md p-3 group relative">
+                                        <p className="text-sm text-[#1a1a1a] leading-5">{msg.content}</p>
+                                        <div className="absolute top-1/2 -right-2 transform -translate-y-1/2 translate-x-full bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                          {fullDateTime}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
 
-                                <button
-                                  onClick={() => handleReactionToMessage(msg)}
-                                  className="p-1.5 text-gray-500 hover:text-yellow-500 hover:bg-yellow-50 rounded-full transition-colors"
-                                  title="Cảm xúc"
-                                >
-                                  <i className="fas fa-smile text-sm"></i>
-                                </button>
+                                  <div className={`flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200 ${isOutgoing ? 'mr-2' : 'ml-2'}`}>
+                                    <button
+                                      onClick={() => handleReplyToMessage(msg)}
+                                      className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
+                                      title="Trả lời"
+                                    >
+                                      <i className="fas fa-reply text-sm"></i>
+                                    </button>
 
-                                <div className="relative">
-                                  <button
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      // Simple toggle logic
-                                      if (showMoreMenu === msg.id) {
-                                        setShowMoreMenu(null);
-                                      } else {
-                                        setShowMoreMenu(msg.id);
-                                      }
-                                    }}
-                                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
-                                    title="Tùy chọn"
-                                  >
-                                    <i className="fas fa-ellipsis-h text-sm"></i>
-                                  </button>
+                                    <button
+                                      onClick={() => handleReactionToMessage(msg)}
+                                      className="p-1.5 text-gray-500 hover:text-yellow-500 hover:bg-yellow-50 rounded-full transition-colors"
+                                      title="Cảm xúc"
+                                    >
+                                      <i className="fas fa-smile text-sm"></i>
+                                    </button>
 
-                                  <MessagePopupMenu
-                                    isOpen={showMoreMenu === msg.id}
-                                    onClose={() => setShowMoreMenu(null)}
-                                    onRecall={() => handleRecallMessage(msg.id)}
-                                    onForward={() => handleForwardMessage(msg)}
-                                    onReply={() => handleReplyToMessage(msg)}
-                                    onReact={() => handleReactionToMessage(msg)}
-                                    isOutgoing={isOutgoing}
-                                    position={isOutgoing ? 'right' : 'left'}
-                                  />
+                                    <div className="relative">
+                                      <button
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          if (showMoreMenu === msg.id) {
+                                            setShowMoreMenu(null);
+                                          } else {
+                                            setShowMoreMenu(msg.id);
+                                          }
+                                        }}
+                                        className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+                                        title="Tùy chọn"
+                                      >
+                                        <i className="fas fa-ellipsis-h text-sm"></i>
+                                      </button>
+
+                                      <MessagePopupMenu
+                                        isOpen={showMoreMenu === msg.id}
+                                        onClose={() => setShowMoreMenu(null)}
+                                        onRecall={() => handleRecallMessage(msg.id)}
+                                        onForward={() => handleForwardMessage(msg)}
+                                        onReply={() => handleReplyToMessage(msg)}
+                                        onReact={() => handleReactionToMessage(msg)}
+                                        isOutgoing={isOutgoing}
+                                        position={isOutgoing ? 'right' : 'left'}
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
+                              </motion.div>
+                            );
+                          }
+
+                          // call item
+                          const call = item.data;
+                          const isOutgoingCall = call.initiatorId === user?.id;
+                          return (
+                            <motion.div
+                              key={`call-${call.id}`}
+                              className="mb-2"
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: index * 0.05 }}
+                            >
+                              <CallHistoryMessage
+                                call={call}
+                                isOutgoing={isOutgoingCall}
+                                onCallBack={handleCallBack}
+                              />
+                            </motion.div>
+                          );
+                        });
+                      })()}
 
                       {typingUsers.size > 0 && (
                         <motion.div
@@ -1070,6 +1243,40 @@ const ChatUI: React.FC = () => {
       <AddFriendModal
         isOpen={showAddFriendModal}
         onClose={() => setShowAddFriendModal(false)}
+      />
+
+      {/* Call Modal */}
+      <CallModal
+        isOpen={isCallModalOpen}
+        onClose={closeCallModal}
+        callState={callState}
+        onAcceptCall={acceptCall}
+        onRejectCall={rejectCall}
+        onEndCall={endCall}
+        onToggleMute={toggleMute}
+        callerName={callerName}
+      />
+
+      {/* Call Alert Dialog */}
+      <ConfirmDialog
+        isOpen={showCallAlert}
+        onClose={() => setShowCallAlert(false)}
+        onConfirm={() => setShowCallAlert(false)}
+        title="Thông báo"
+        message={callAlertMessage}
+        confirmText="OK"
+        cancelText=""
+        confirmButtonColor="blue"
+        isLoading={false}
+      />
+
+      {/* Incoming Call Notification */}
+      <IncomingCallNotification
+        isVisible={showIncomingCallNotification}
+        callerName={callerInfo?.name || callerName || 'Unknown'}
+        callerAvatar={callerInfo?.avatar}
+        onAccept={acceptCall}
+        onReject={rejectCall}
       />
     </div>
   );

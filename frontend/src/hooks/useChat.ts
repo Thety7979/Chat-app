@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import chatApi from '../api/chatApi';
 import websocketService from '../services/websocketService';
+import webrtcService from '../services/webrtcService';
 import { Message, Conversation, TypingIndicator, ReadReceipt, MessageType } from '../types/chat';
 
 export const useChat = () => {
@@ -35,6 +36,9 @@ export const useChat = () => {
         .then(() => {
           setIsConnected(true);
           console.log('WebSocket connected');
+          
+          // Setup WebRTC call event handlers
+          webrtcService.setupWebSocketHandlers();
           
           // Subscribe to conversation updates
           websocketService.subscribeToUserConversations((conversation) => {
@@ -232,6 +236,15 @@ export const useChat = () => {
 
     setJustSelectedConversation(true);
 
+    // Inform server we leave the previous conversation for accurate presence
+    if (currentConversation) {
+      try {
+        websocketService.leaveConversation(currentConversation.id);
+      } catch (e) {
+        console.log('Failed to send leave presence (previous conversation):', e);
+      }
+    }
+
     setCurrentConversation(conversation);
 
     setMessages([]);
@@ -267,6 +280,23 @@ export const useChat = () => {
 
     setTimeout(() => setJustSelectedConversation(false), 100);
   }, [loadMessages, markConversationAsRead, scrollToBottom]);
+
+  // Send presence leave on unmount or tab close for the current conversation
+  useEffect(() => {
+    const handleUnload = () => {
+      if (currentConversation) {
+        try { websocketService.leaveConversation(currentConversation.id); } catch {}
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      if (currentConversation) {
+        try { websocketService.leaveConversation(currentConversation.id); } catch {}
+      }
+    };
+  }, [currentConversation?.id]);
 
   const sendTypingIndicator = useCallback((isTyping: boolean) => {
     if (currentConversation) {

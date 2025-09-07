@@ -2,12 +2,16 @@ package ty.tran.demo.Controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+import org.springframework.web.socket.messaging.SessionConnectEvent;
 import ty.tran.demo.DTO.SendMessageRequest;
 import ty.tran.demo.Service.MessageService;
 import ty.tran.demo.Service.ConversationService;
@@ -248,6 +252,64 @@ public class WebSocketController {
             this.userId = userId;
             this.status = status;
             this.timestamp = System.currentTimeMillis();
+        }
+    }
+
+    // Handle WebSocket disconnect events to send presence offline
+    @EventListener
+    public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
+        StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
+        var sessionAttributes = headerAccessor.getSessionAttributes();
+        if (sessionAttributes == null) return;
+        
+        Object userIdObj = sessionAttributes.get("userId");
+        if (userIdObj != null) {
+            UUID userId;
+            if (userIdObj instanceof UUID) {
+                userId = (UUID) userIdObj;
+            } else if (userIdObj instanceof String) {
+                userId = UUID.fromString((String) userIdObj);
+            } else {
+                return;
+            }
+            
+            log.info("User {} disconnected, sending presence offline to all conversations", userId);
+            
+            // Send presence offline to all conversations this user is a member of
+            try {
+                // Get all conversations for this user and send presence offline
+                conversationService.getUserConversations(userId).forEach(conversation -> {
+                    messagingTemplate.convertAndSend(
+                        "/topic/conversation/" + conversation.getId() + "/presence",
+                        new PresenceUpdate(userId, "offline")
+                    );
+                    log.info("Sent presence offline for user {} in conversation {}", userId, conversation.getId());
+                });
+            } catch (Exception e) {
+                log.error("Error sending presence offline for user {}: {}", userId, e.getMessage());
+            }
+        }
+    }
+
+    // Handle WebSocket connect events to send presence online
+    @EventListener
+    public void handleWebSocketConnectListener(SessionConnectEvent event) {
+        StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
+        var sessionAttributes = headerAccessor.getSessionAttributes();
+        if (sessionAttributes == null) return;
+        
+        Object userIdObj = sessionAttributes.get("userId");
+        if (userIdObj != null) {
+            UUID userId;
+            if (userIdObj instanceof UUID) {
+                userId = (UUID) userIdObj;
+            } else if (userIdObj instanceof String) {
+                userId = UUID.fromString((String) userIdObj);
+            } else {
+                return;
+            }
+            
+            log.info("User {} connected", userId);
         }
     }
 }

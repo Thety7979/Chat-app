@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useFriends } from '../hooks/useFriends';
 import { useChat } from '../hooks/useChat';
+import { useCall } from '../hooks/useCall';
 import chatApi from '../api/chatApi';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -12,13 +13,14 @@ interface FriendsListProps {
 const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemoved }) => {
   const { friends, isLoading, error, removeFriend, loadFriends } = useFriends();
   const { selectConversation, loadConversations } = useChat();
+  const { startCall } = useCall();
   
-  // Debug: Log friends count changes
-  console.log('FriendsList - Friends count:', friends.length, 'Friends:', friends.map(f => f.displayName || f.email));
   const [isStartingChat, setIsStartingChat] = useState<string | null>(null);
   const [isRemovingFriend, setIsRemovingFriend] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false);
   const [friendToRemove, setFriendToRemove] = useState<any>(null);
+  const [showErrorDialog, setShowErrorDialog] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const handleFriendClick = async (friend: any) => {
     if (onSelectFriend) {
@@ -37,7 +39,8 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemov
         console.log('Started conversation with:', friend.displayName || friend.email);
       } catch (error) {
         console.error('Failed to start conversation:', error);
-        alert(`Không thể bắt đầu trò chuyện với ${friend.displayName || friend.email}`);
+        setErrorMessage(`Không thể bắt đầu trò chuyện với ${friend.displayName || friend.email}`);
+        setShowErrorDialog(true);
       } finally {
         setIsStartingChat(null);
       }
@@ -67,7 +70,8 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemov
       console.log('Successfully removed friend:', friendToRemove.displayName || friendToRemove.email);
     } catch (error) {
       console.error('Failed to remove friend:', error);
-      alert(`Không thể hủy kết bạn với ${friendToRemove.displayName || friendToRemove.email}`);
+      setErrorMessage(`Không thể hủy kết bạn với ${friendToRemove.displayName || friendToRemove.email}`);
+      setShowErrorDialog(true);
     } finally {
       setIsRemovingFriend(null);
       setShowConfirmDialog(false);
@@ -78,6 +82,19 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemov
   const handleCancelRemoveFriend = () => {
     setShowConfirmDialog(false);
     setFriendToRemove(null);
+  };
+
+  const handleCallFriend = async (friend: any) => {
+    try {
+      console.log('FriendsList - Starting call with friend:', friend);
+      console.log('FriendsList - Friend ID:', friend.id);
+      await startCall(friend.id);
+      console.log('FriendsList - Call started successfully');
+    } catch (error) {
+      console.error('FriendsList - Failed to start call:', error);
+      setErrorMessage(`Không thể gọi ${friend.displayName || friend.email}`);
+      setShowErrorDialog(true);
+    }
   };
 
   if (isLoading) {
@@ -150,6 +167,11 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemov
                 <button
                   className="p-2 text-[#6b7280] hover:text-[#3b82f6] transition-colors"
                   title="Gọi thoại"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCallFriend(friend);
+                  }}
                 >
                   <i className="fas fa-phone text-sm"></i>
                 </button>
@@ -187,6 +209,18 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemov
         cancelText="Không"
         confirmButtonColor="red"
         isLoading={isRemovingFriend === friendToRemove?.id}
+      />
+
+      <ConfirmDialog
+        isOpen={showErrorDialog}
+        onClose={() => setShowErrorDialog(false)}
+        onConfirm={() => setShowErrorDialog(false)}
+        title="Lỗi"
+        message={errorMessage}
+        confirmText="OK"
+        cancelText=""
+        confirmButtonColor="blue"
+        isLoading={false}
       />
     </div>
   );

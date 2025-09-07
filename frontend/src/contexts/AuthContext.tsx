@@ -8,7 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
   signup: (userData: SignupRequest) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   setUser: (user: UserDTO) => void;
   error: string | null;
   clearError: () => void;
@@ -95,11 +95,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    authApi.logout();
-    setUser(null);
-    setToken(null);
-    setError(null);
+  const logout = async () => {
+    try {
+      await authApi.logout();
+    } catch (error) {
+      console.warn('Logout error:', error);
+    } finally {
+      setUser(null);
+      setToken(null);
+      setError(null);
+    }
   };
 
   const clearError = () => {

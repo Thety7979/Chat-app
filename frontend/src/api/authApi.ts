@@ -160,10 +160,18 @@ class AuthApi {
   }
 
   async logout(): Promise<void> {
-    // Clear local storage and tokens
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
+    try {
+      // Call backend logout endpoint to invalidate token
+      await this.api.post('/auth/logout');
+    } catch (error) {
+      // Ignore logout API errors, still clear local storage
+      console.warn('Logout API call failed:', error);
+    } finally {
+      // Clear local storage and tokens
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+    }
   }
 
   // Helper methods for token management

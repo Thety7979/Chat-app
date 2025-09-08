@@ -109,22 +109,10 @@ cd frontend
 npm run build
 ```
 
-### Screenshots (placeholders)
+<img width="1919" height="869" alt="image" src="https://github.com/user-attachments/assets/4b51ce5e-c714-4e61-875d-191aeb0137ab" />
 
-<!-- Paste/drag screenshots into docs/assets and uncomment lines -->
-<!-- 
-#### Sign In
-![Sign In](docs/assets/sign-in.png)
+<img width="1919" height="867" alt="image" src="https://github.com/user-attachments/assets/e8eecb26-68a0-4f65-b41b-9393cf8ebdb9" />
 
-#### Chat List
-![Chat List](docs/assets/chat-list.png)
-
-#### Conversation
-![Conversation](docs/assets/conversation.png)
-
-#### Audio/Video Call
-![Call](docs/assets/call.png)
--->
 
 ### License
 

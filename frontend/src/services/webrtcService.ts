@@ -15,6 +15,9 @@ export interface CallState {
   peerConnection: RTCPeerConnection | null;
   pendingOffer?: RTCSessionDescriptionInit;
   pendingIceCandidates: RTCIceCandidateInit[];
+  callType: 'audio' | 'video';
+  isVideoEnabled: boolean;
+  isAudioEnabled: boolean;
 }
 
 export interface CallEvent {
@@ -25,6 +28,7 @@ export interface CallEvent {
   data?: any;
   offer?: RTCSessionDescriptionInit;
   answer?: RTCSessionDescriptionInit;
+  callType?: 'audio' | 'video';
 }
 
 class WebRTCService {
@@ -39,7 +43,10 @@ class WebRTCService {
     localStream: null,
     remoteStream: null,
     peerConnection: null,
-    pendingIceCandidates: []
+    pendingIceCandidates: [],
+    callType: 'audio',
+    isVideoEnabled: false,
+    isAudioEnabled: true
   };
 
   private callHandlers: Map<string, (event: CallEvent) => void> = new Map();
@@ -52,6 +59,26 @@ class WebRTCService {
     this.initializeAudioContext();
     this.enableAudioContext();
     // Don't setup WebSocket handlers here - wait for WebSocket to be ready
+    // Ensure we signal call end if the tab/window is closed while in a call
+    if (typeof window !== 'undefined') {
+      const handleBeforeUnload = () => {
+        try {
+          const state = this.getCallState();
+          if (state.isInCall && state.callId) {
+            // Fire-and-forget best-effort notification
+            try {
+              websocketService.sendCallEvent({
+                type: 'call_ended',
+                callId: state.callId,
+                callerId: state.callerId || websocketService.getCurrentUserId() || '',
+                calleeId: state.calleeId || ''
+              });
+            } catch {}
+          }
+        } catch {}
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+    }
   }
 
   private initializeAudioContext() {
@@ -171,6 +198,15 @@ class WebRTCService {
     }
   }
 
+  private hasVideoInSdp(sdp?: RTCSessionDescriptionInit | string): boolean {
+    try {
+      const s = typeof sdp === 'string' ? sdp : sdp?.sdp || '';
+      return /\nm=video\s/i.test(s);
+    } catch {
+      return false;
+    }
+  }
+
   private handleCallEvent(event: CallEvent) {
     console.log('WebRTC Service - Call event received:', event);
     
@@ -234,7 +270,10 @@ class WebRTCService {
       isCallIncoming: true,
       callId: event.callId,
       callerId: event.callerId,
-      calleeId: event.calleeId
+      calleeId: event.calleeId,
+      callType: event.callType || 'audio',
+      isVideoEnabled: event.callType === 'video',
+      isAudioEnabled: true
     };
     
     // If there's an offer in the incoming call event, store it for later
@@ -247,11 +286,17 @@ class WebRTCService {
   }
 
   private async handleCallAccepted(event: CallEvent) {
+    // Keep video UI if answer SDP still contains a video m-line
+    const answerHasVideo = this.hasVideoInSdp(event.answer);
+    const nextCallType = answerHasVideo ? 'video' : (event.callType ? event.callType : this.callState.callType);
+
     this.callState = {
       ...this.callState,
       isCallIncoming: false,
       isCallOutgoing: false,
-      isCallActive: true
+      isCallActive: true,
+      callType: nextCallType,
+      isVideoEnabled: nextCallType === 'video' ? this.callState.isVideoEnabled : false
     };
     this.stopRingtone();
     
@@ -279,7 +324,8 @@ class WebRTCService {
   }
 
   private handleCallEnded(event: CallEvent) {
-    this.endCall();
+    // Do not rebroadcast when we received a remote end; just cleanup locally
+    this.endCall(false);
   }
 
   private handleCallFailed(event: CallEvent) {
@@ -336,7 +382,38 @@ class WebRTCService {
   }
 
   // Public methods
-  async startCall(calleeId: string): Promise<void> {
+  async checkMediaPermissions(callType: 'audio' | 'video'): Promise<{audio: boolean, video: boolean}> {
+    try {
+      const permissions = { audio: false, video: false };
+      
+      // Check audio permission
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        permissions.audio = true;
+        audioStream.getTracks().forEach(track => track.stop());
+      } catch (error) {
+        console.warn('Audio permission denied:', error);
+      }
+      
+      // Check video permission if needed
+      if (callType === 'video') {
+        try {
+          const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          permissions.video = true;
+          videoStream.getTracks().forEach(track => track.stop());
+        } catch (error) {
+          console.warn('Video permission denied:', error);
+        }
+      }
+      
+      return permissions;
+    } catch (error) {
+      console.error('Error checking media permissions:', error);
+      return { audio: false, video: false };
+    }
+  }
+
+  async startCall(calleeId: string, callType: 'audio' | 'video' = 'audio'): Promise<void> {
     try {
       console.log('WebRTC Service - startCall called with calleeId:', calleeId);
       
@@ -349,7 +426,7 @@ class WebRTCService {
       console.log('WebRTC Service - Creating call record...');
       let callRecord;
       try {
-        callRecord = await callApi.createCall(conversation.id, 'audio');
+        callRecord = await callApi.createCall(conversation.id, callType);
       console.log('WebRTC Service - Call record created:', callRecord);
       } catch (error: any) {
         if (error.response?.status === 400 && error.response?.data?.includes('ongoing call')) {
@@ -358,7 +435,7 @@ class WebRTCService {
             // Try to cleanup expired calls
             await callApi.cleanupExpiredCalls();
             console.log('WebRTC Service - Cleanup completed, retrying call creation...');
-            callRecord = await callApi.createCall(conversation.id, 'audio');
+            callRecord = await callApi.createCall(conversation.id, callType);
             console.log('WebRTC Service - Call record created after cleanup:', callRecord);
           } catch (cleanupError) {
             console.error('WebRTC Service - Cleanup failed:', cleanupError);
@@ -369,12 +446,59 @@ class WebRTCService {
         }
       }
       
-      // Get user media
+      // Ensure any existing local tracks are fully stopped before requesting new media
+      try {
+        if (this.callState.localStream) {
+          this.callState.localStream.getTracks().forEach(t => {
+            try { t.stop(); } catch {}
+          });
+        }
+      } catch {}
+
+      // Get user media with fallback for video calls
       console.log('WebRTC Service - Getting user media...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: false
-      });
+      let stream: MediaStream;
+      let actualCallType = callType;
+      
+      try {
+        if (callType === 'video') {
+          // Try to get both audio and video first
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: { facingMode: 'user' }
+          });
+          console.log('WebRTC Service - Got both audio and video streams');
+        } else {
+          // Audio only call
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false
+          });
+          console.log('WebRTC Service - Got audio stream');
+        }
+      } catch (videoError) {
+        console.warn('WebRTC Service - Failed to get video stream, falling back to audio only:', videoError);
+        
+        if (callType === 'video') {
+          // For video calls, try audio only as fallback
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: false
+            });
+            console.log('WebRTC Service - Fallback to audio-only local stream but keep video call UI');
+            // Keep call as video but disable local video
+            actualCallType = 'video';
+          } catch (audioError) {
+            console.error('WebRTC Service - Failed to get any media stream:', audioError);
+            throw new Error('Could not access microphone. Please check your permissions.');
+          }
+        } else {
+          // For audio calls, this is a real error
+          throw new Error('Could not access microphone. Please check your permissions.');
+        }
+      }
+      
       console.log('WebRTC Service - User media obtained');
 
       this.callState = {
@@ -383,7 +507,10 @@ class WebRTCService {
         isCallOutgoing: true,
         localStream: stream,
         calleeId: calleeId,
-        callId: callRecord.id
+        callId: callRecord.id,
+        callType: actualCallType,
+        isVideoEnabled: actualCallType === 'video' && stream.getVideoTracks().length > 0,
+        isAudioEnabled: true
       };
       console.log('WebRTC Service - Call state updated:', this.callState);
 
@@ -396,6 +523,16 @@ class WebRTCService {
       this.playLocalAudio(stream);
 
       // Create and send offer
+      // If this is a video call but we don't have a local video track, ensure SDP still has a video m-line
+      if (this.callState.callType === 'video' && (!this.callState.localStream || this.callState.localStream.getVideoTracks().length === 0)) {
+        try {
+          this.callState.peerConnection!.addTransceiver('video', { direction: 'recvonly' });
+          console.log('WebRTC Service - Added recvonly video transceiver for video call without local camera');
+        } catch (e) {
+          console.warn('WebRTC Service - Failed to add recvonly video transceiver:', e);
+        }
+      }
+
       console.log('WebRTC Service - Creating offer...');
       const offer = await this.callState.peerConnection!.createOffer();
       await this.callState.peerConnection!.setLocalDescription(offer);
@@ -407,12 +544,13 @@ class WebRTCService {
         callId: callRecord.id,
         callerId: websocketService.getCurrentUserId() || '',
         calleeId: calleeId,
-        offer: offer
+        offer: offer,
+        callType: actualCallType
       };
       console.log('WebRTC Service - Sending call event with offer:', callEvent);
       websocketService.sendCallEvent(callEvent);
 
-      // Also trigger local event handler for UI update
+      // Also trigger local event handler for UI update, but ensure UI knows actual type
       console.log('WebRTC Service - Triggering local call_outgoing event');
       this.handleCallEvent(callEvent);
 
@@ -439,11 +577,55 @@ class WebRTCService {
       // Update call status to ongoing
       await callApi.updateCallStatus(this.callState.callId, 'ongoing');
       
-      // Get user media
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: false
-      });
+      // Ensure any existing local tracks are fully stopped before requesting new media
+      try {
+        if (this.callState.localStream) {
+          this.callState.localStream.getTracks().forEach(t => {
+            try { t.stop(); } catch {}
+          });
+        }
+      } catch {}
+
+      // Get user media with fallback for video calls
+      let stream: MediaStream;
+      try {
+        if (this.callState.callType === 'video') {
+          // Try to get both audio and video first
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: { facingMode: 'user' }
+          });
+          console.log('WebRTC Service - Got both audio and video streams');
+        } else {
+          // Audio only call
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false
+          });
+          console.log('WebRTC Service - Got audio stream');
+        }
+      } catch (videoError) {
+        console.warn('WebRTC Service - Failed to get video stream, falling back to audio only:', videoError);
+        
+        if (this.callState.callType === 'video') {
+          // For video calls, try audio only as fallback
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: false
+            });
+            console.log('WebRTC Service - Fallback to audio-only local stream; keep video call UI');
+            // Keep call as video but without local camera
+            this.callState.isVideoEnabled = false;
+          } catch (audioError) {
+            console.error('WebRTC Service - Failed to get any media stream:', audioError);
+            throw new Error('Could not access microphone. Please check your permissions.');
+          }
+        } else {
+          // For audio calls, this is a real error
+          throw new Error('Could not access microphone. Please check your permissions.');
+        }
+      }
 
       this.callState.localStream = stream;
       await this.createPeerConnection();
@@ -453,10 +635,23 @@ class WebRTCService {
 
       // If we have a pending offer, set it as remote description and create answer
       if (this.callState.pendingOffer) {
+        // Ensure a recvonly video transceiver exists BEFORE setting remote description
+        if (this.callState.callType === 'video' && (!this.callState.localStream || this.callState.localStream.getVideoTracks().length === 0)) {
+          try {
+            const existingVideo = this.callState.peerConnection!.getTransceivers().some(t => t.receiver.track && t.receiver.track.kind === 'video');
+            if (!existingVideo) {
+              this.callState.peerConnection!.addTransceiver('video', { direction: 'recvonly' });
+              console.log('WebRTC Service - Pre-added recvonly video transceiver before setRemoteDescription');
+            }
+          } catch (e) {
+            console.warn('WebRTC Service - Failed to pre-add recvonly transceiver on accept:', e);
+          }
+        }
+
         console.log('WebRTC Service - Setting pending offer as remote description...');
         await this.callState.peerConnection!.setRemoteDescription(this.callState.pendingOffer);
         console.log('WebRTC Service - Remote description set');
-        
+
         // Process any pending ICE candidates
         await this.processPendingIceCandidates();
         
@@ -465,13 +660,22 @@ class WebRTCService {
         await this.callState.peerConnection!.setLocalDescription(answer);
         console.log('WebRTC Service - Answer created and set as local description');
 
+        // Mark call as active on callee side once local description is set
+        this.callState = {
+          ...this.callState,
+          isCallIncoming: false,
+          isCallOutgoing: false,
+          isCallActive: true
+        };
+
         // Send call accepted with answer via WebSocket
         websocketService.sendCallEvent({
           type: 'call_accepted',
           callId: this.callState.callId,
           callerId: this.callState.callerId || '',
           calleeId: websocketService.getCurrentUserId() || '',
-          answer: answer
+          answer: answer,
+          callType: this.callState.callType
         });
         
         // Clear pending offer
@@ -484,7 +688,8 @@ class WebRTCService {
         type: 'call_accepted',
         callId: this.callState.callId,
         callerId: this.callState.callerId || '',
-        calleeId: websocketService.getCurrentUserId() || ''
+        calleeId: websocketService.getCurrentUserId() || '',
+        callType: this.callState.callType
       });
       }
 
@@ -518,7 +723,10 @@ class WebRTCService {
     }
   }
 
-  async endCall(): Promise<void> {
+  async endCall(broadcast: boolean = true): Promise<void> {
+    const prevCallId = this.callState.callId;
+    const prevCallerId = this.callState.callerId;
+    const prevCalleeId = this.callState.calleeId;
     // Clear any pending timeouts
     if (this.callTimeout) {
       clearTimeout(this.callTimeout);
@@ -529,19 +737,28 @@ class WebRTCService {
     this.stopAudio();
 
     if (this.callState.callId) {
+      const callId = this.callState.callId;
+      const calleeId = this.callState.calleeId || '';
+      const callerId = this.callState.callerId || websocketService.getCurrentUserId() || '';
+      // Only notify the peer if this side initiated the end
+      if (broadcast) {
+        try {
+          websocketService.sendCallEvent({
+            type: 'call_ended',
+            callId,
+            callerId,
+            calleeId
+          });
+        } catch (e) {
+          console.error('Failed to send call_ended event:', e);
+        }
+      }
+
+      // Best-effort backend update
       try {
-        // Update call status to ended
-        await callApi.endCall(this.callState.callId);
-        
-      // Send call ended via WebSocket
-      websocketService.sendCallEvent({
-        type: 'call_ended',
-        callId: this.callState.callId,
-        callerId: websocketService.getCurrentUserId() || '',
-        calleeId: this.callState.calleeId || ''
-      });
+        await callApi.endCall(callId);
       } catch (error) {
-        console.error('Failed to end call:', error);
+        console.error('Failed to update call end status on server:', error);
       }
     }
 
@@ -565,10 +782,26 @@ class WebRTCService {
       localStream: null,
       remoteStream: null,
       peerConnection: null,
-      pendingIceCandidates: []
+      pendingIceCandidates: [],
+      callType: 'audio',
+      isVideoEnabled: false,
+      isAudioEnabled: true
     };
 
     this.stopRingtone();
+
+    // Immediately notify local handlers so UI closes without waiting for network
+    try {
+      if (prevCallId) {
+        const localEvent: CallEvent = {
+          type: 'call_ended',
+          callId: prevCallId,
+          callerId: prevCallerId || websocketService.getCurrentUserId() || '',
+          calleeId: prevCalleeId || ''
+        };
+        this.callHandlers.forEach((handler) => handler(localEvent));
+      }
+    } catch {}
   }
 
   private async createPeerConnection(): Promise<void> {
@@ -595,6 +828,15 @@ class WebRTCService {
       
       // Play remote audio
       this.playRemoteAudio(event.streams[0]);
+    };
+
+    // Close UI when connection is closed/disconnected by peer
+    this.callState.peerConnection.onconnectionstatechange = () => {
+      const state = this.callState.peerConnection?.connectionState;
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        // Peer hung up or connection dropped; cleanup locally without rebroadcast
+        this.endCall(false).catch(() => {});
+      }
     };
 
     // Handle ICE candidates
@@ -827,16 +1069,90 @@ class WebRTCService {
       const audioTrack = this.callState.localStream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
+        this.callState.isAudioEnabled = audioTrack.enabled;
         return !audioTrack.enabled;
       }
     }
     return false;
   }
 
+  // Video controls
+  toggleVideo(): boolean {
+    if (this.callState.localStream) {
+      const videoTrack = this.callState.localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        this.callState.isVideoEnabled = videoTrack.enabled;
+        return videoTrack.enabled;
+      }
+    }
+    return false;
+  }
+
+  // Switch camera (for video calls)
+  async switchCamera(): Promise<void> {
+    if (this.callState.callType !== 'video' || !this.callState.localStream) {
+      return;
+    }
+
+    try {
+      const videoTrack = this.callState.localStream.getVideoTracks()[0];
+      if (!videoTrack) return;
+
+      // Get all available devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      
+      if (videoDevices.length < 2) {
+        console.log('Only one camera available');
+        return;
+      }
+
+      // Find current device
+      const currentDeviceId = videoTrack.getSettings().deviceId;
+      const currentIndex = videoDevices.findIndex(device => device.deviceId === currentDeviceId);
+      const nextIndex = (currentIndex + 1) % videoDevices.length;
+      const nextDeviceId = videoDevices[nextIndex].deviceId;
+
+      // Stop current video track
+      videoTrack.stop();
+
+      // Get new video stream
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: nextDeviceId } }
+      });
+
+      // Replace video track in local stream
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      const sender = this.callState.peerConnection?.getSenders().find(s => 
+        s.track && s.track.kind === 'video'
+      );
+      
+      if (sender) {
+        await sender.replaceTrack(newVideoTrack);
+      }
+
+      // Update local stream
+      this.callState.localStream.removeTrack(videoTrack);
+      this.callState.localStream.addTrack(newVideoTrack);
+
+      // Update video element if it exists
+      const localVideo = document.getElementById('local-video') as HTMLVideoElement;
+      if (localVideo) {
+        localVideo.srcObject = this.callState.localStream;
+      }
+
+      console.log('Camera switched successfully');
+    } catch (error) {
+      console.error('Failed to switch camera:', error);
+    }
+  }
+
   setVolume(volume: number): void {
     // This would typically be handled by the audio element in the UI
     console.log('Set volume to:', volume);
   }
+
 }
 
 export const webrtcService = new WebRTCService();

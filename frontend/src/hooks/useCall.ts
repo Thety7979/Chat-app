@@ -66,8 +66,11 @@ export const useCall = () => {
             setCallerInfo({ name: event.callerId });
             setCallerName(event.callerId);
           }
-          console.log('useCall Hook - Setting showIncomingCallNotification to true');
-          setShowIncomingCallNotification(true);
+          // Show full call modal for incoming calls (instead of only small notification)
+          console.log('useCall Hook - Opening call modal for incoming call');
+          setIsCallModalOpen(true);
+          // Optionally hide the small notification to avoid duplication
+          setShowIncomingCallNotification(false);
           break;
         case 'call_outgoing':
           console.log('useCall Hook - Processing outgoing call for callee:', event.calleeId);
@@ -119,10 +122,10 @@ export const useCall = () => {
   }, []);
 
   // Call actions
-  const startCall = useCallback(async (calleeId: string) => {
+  const startCall = useCallback(async (calleeId: string, callType: 'audio' | 'video' = 'audio') => {
     try {
-      console.log('useCall Hook - Starting call to:', calleeId);
-      await webrtcService.startCall(calleeId);
+      console.log('useCall Hook - Starting call to:', calleeId, 'type:', callType);
+      await webrtcService.startCall(calleeId, callType);
       console.log('useCall Hook - Call started successfully');
       
       // Fetch callee information for display
@@ -189,6 +192,14 @@ export const useCall = () => {
     webrtcService.toggleMute();
   }, []);
 
+  const toggleVideo = useCallback(() => {
+    webrtcService.toggleVideo();
+  }, []);
+
+  const switchCamera = useCallback(() => {
+    webrtcService.switchCamera();
+  }, []);
+
   const closeCallModal = useCallback(() => {
     setIsCallModalOpen(false);
   }, []);
@@ -204,6 +215,8 @@ export const useCall = () => {
     rejectCall,
     endCall,
     toggleMute,
+    toggleVideo,
+    switchCamera,
     closeCallModal
   };
 };

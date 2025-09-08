@@ -16,6 +16,8 @@ import CallHistoryMessage from './CallHistoryMessage';
 import chatApi from '../api/chatApi';
 import '../assets/css/ChatUI.css';
 import websocketService from '../services/websocketService';
+import webrtcService from '../services/webrtcService';
+import PermissionInstructionsModal from './PermissionInstructionsModal';
 
 const ChatUI: React.FC = () => {
   const { user, logout } = useAuth();
@@ -54,6 +56,8 @@ const ChatUI: React.FC = () => {
     rejectCall,
     endCall,
     toggleMute,
+    toggleVideo,
+    switchCamera,
     closeCallModal
   } = useCall();
 
@@ -82,6 +86,8 @@ const ChatUI: React.FC = () => {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showMoreMenu, setShowMoreMenu] = useState<string | null>(null);
   const [presenceText, setPresenceText] = useState<string>('');
+  const [showPermissionModal, setShowPermissionModal] = useState<boolean>(false);
+  const [permissionType, setPermissionType] = useState<'camera' | 'microphone' | 'both'>('both');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const likeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -224,12 +230,37 @@ const ChatUI: React.FC = () => {
     setShowMoreMenu(null);
   };
 
-  const handleCall = (type: 'voice' | 'video') => {
+  const handleCall = async (type: 'audio' | 'video') => {
     console.log('ChatUI - handleCall called with type:', type);
     console.log('ChatUI - currentContact:', currentContact);
     if (currentContact) {
       console.log('ChatUI - Starting call to:', currentContact.id);
-      startCall(currentContact.id);
+      
+      try {
+        // Check media permissions before starting call
+        const permissions = await webrtcService.checkMediaPermissions(type);
+        
+        if (!permissions.audio) {
+          setPermissionType('microphone');
+          setShowPermissionModal(true);
+          return;
+        }
+        
+        if (type === 'video' && !permissions.video) {
+          // Thông báo lỗi quyền camera, nhưng vẫn giữ cuộc gọi video (hiển thị UI video)
+          setPermissionType('camera');
+          setShowPermissionModal(true);
+          setCallAlertMessage('Không truy cập được camera. Hệ thống sẽ thử kết nối video một chiều.');
+          setShowCallAlert(true);
+          // Tiếp tục startCall dưới dạng video; phía service sẽ thêm transceiver recvonly
+        }
+        
+        await startCall(currentContact.id, type);
+      } catch (error) {
+        console.error('ChatUI - Failed to start call:', error);
+        setCallAlertMessage('Không thể bắt đầu cuộc gọi. Vui lòng thử lại.');
+        setShowCallAlert(true);
+      }
     } else {
       console.log('ChatUI - No current contact to call');
     }
@@ -249,7 +280,7 @@ const ChatUI: React.FC = () => {
         call.initiatorId;
       
       if (otherParticipantId) {
-        await startCall(otherParticipantId);
+        await startCall(otherParticipantId, 'audio'); // Default to audio for call back
         setIsCalling(true);
       }
     } catch (error) {
@@ -856,7 +887,7 @@ const ChatUI: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <motion.button
                     className="w-10 h-10 text-[#6b7280] hover:text-[#3b82f6] focus:outline-none transition-colors"
-                    onClick={() => handleCall('voice')}
+                    onClick={() => handleCall('audio')}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     disabled={isCalling}
@@ -1254,6 +1285,8 @@ const ChatUI: React.FC = () => {
         onRejectCall={rejectCall}
         onEndCall={endCall}
         onToggleMute={toggleMute}
+        onToggleVideo={toggleVideo}
+        onSwitchCamera={switchCamera}
         callerName={callerName}
       />
 
@@ -1277,6 +1310,13 @@ const ChatUI: React.FC = () => {
         callerAvatar={callerInfo?.avatar}
         onAccept={acceptCall}
         onReject={rejectCall}
+      />
+
+      {/* Permission Instructions Modal */}
+      <PermissionInstructionsModal
+        isOpen={showPermissionModal}
+        onClose={() => setShowPermissionModal(false)}
+        type={permissionType}
       />
     </div>
   );

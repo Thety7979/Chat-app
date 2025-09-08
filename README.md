@@ -4,10 +4,9 @@ Modern real‑time chat and calling app built with Spring Boot (backend) and Rea
 
 ### Preview
 
-<!-- Replace the placeholders below with your images (drag/drop on GitHub or link from /docs/assets) -->
-<!-- ![Landing](docs/assets/landing.png) -->
-<!-- ![Chat UI](docs/assets/chat-ui.png) -->
-<!-- ![Video Call](docs/assets/video-call.png) -->
+<img width="1919" height="869" alt="image" src="https://github.com/user-attachments/assets/4b51ce5e-c714-4e61-875d-191aeb0137ab" />
+
+<img width="1919" height="867" alt="image" src="https://github.com/user-attachments/assets/e8eecb26-68a0-4f65-b41b-9393cf8ebdb9" />
 
 ### Features
 
@@ -108,14 +107,3 @@ Frontend:
 cd frontend
 npm run build
 ```
-
-<img width="1919" height="869" alt="image" src="https://github.com/user-attachments/assets/4b51ce5e-c714-4e61-875d-191aeb0137ab" />
-
-<img width="1919" height="867" alt="image" src="https://github.com/user-attachments/assets/e8eecb26-68a0-4f65-b41b-9393cf8ebdb9" />
-
-
-### License
-
-MIT – see `LICENSE` (add one if missing).
-
-

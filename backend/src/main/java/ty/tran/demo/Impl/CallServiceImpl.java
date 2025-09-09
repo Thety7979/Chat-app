@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ty.tran.demo.DAO.CallDAO;
@@ -32,7 +31,6 @@ public class CallServiceImpl implements CallService {
     private final ConversationDAO conversationDAO;
     private final ConversationMemberDAO conversationMemberDAO;
     private final UserDAO userDAO;
-    private final SimpMessagingTemplate messagingTemplate;
 
     @Override
     public CallDTO createCall(UUID conversationId, UUID initiatorId, Call.CallType type) {

@@ -61,8 +61,6 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<String> logout(@RequestHeader("Authorization") String token) {
-        // TODO: Invalidate token, send presence offline events
-        // For now, just return success - presence will be handled by WebSocket disconnect
         return ResponseEntity.ok("Logged out successfully");
     }
 }

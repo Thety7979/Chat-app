@@ -14,13 +14,15 @@ import java.util.UUID;
 @Repository
 public interface RefreshTokenDAO extends JpaRepository<RefreshToken, UUID> {
     Optional<RefreshToken> findByToken(String token);
+
     Optional<RefreshToken> findByUser(User user);
+
     void deleteByUser_Id(UUID userId);
-    
+
     @Modifying
     @Query("DELETE FROM RefreshToken rt WHERE rt.expiryDate < ?1")
     void deleteExpiredTokens(Instant now);
-    
+
     @Modifying
     @Query("DELETE FROM RefreshToken rt WHERE rt.user.id = ?1 AND rt.token != ?2")
     void deleteOtherTokensForUser(UUID userId, String keepToken);

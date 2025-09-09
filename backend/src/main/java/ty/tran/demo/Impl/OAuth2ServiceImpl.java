@@ -31,8 +31,6 @@ public class OAuth2ServiceImpl implements OAuth2Service {
         if (user == null) {
             throw new RuntimeException("User not found");
         }
-
-        // Generate tokens
         String jwt = jwtService.generateToken(user.getEmail());
         String refreshToken = jwtService.generateRefreshToken(user.getEmail());
 
@@ -59,10 +57,8 @@ public class OAuth2ServiceImpl implements OAuth2Service {
         System.out.println("Provider ID: " + providerId);
         System.out.println("Email: " + email);
         System.out.println("Name: " + name);
-        
+    
         User user = null;
-        
-        // First, try to find user by providerId
         try {
             user = userService.findByProviderId(providerId);
             System.out.println("Found user by providerId: " + (user != null ? user.getEmail() : "null"));
@@ -71,16 +67,13 @@ public class OAuth2ServiceImpl implements OAuth2Service {
         }
         
         if (user == null) {
-            // Try to find user by email
             try {
                 user = userService.findByEmail(email);
                 System.out.println("Found user by email: " + user.getEmail());
-                // Update existing user with OAuth2 info using mergeUser to avoid conflicts
                 user = userService.mergeUserWithOAuth2Info(user, providerId, provider, picture);
                 System.out.println("Successfully updated existing user");
             } catch (Exception e) {
                 System.out.println("User not found by email, creating new user: " + e.getMessage());
-                // User not found by email, create new user
                 try {
                     user = userService.createUserWithOAuth2Info(email, name, providerId, provider, picture);
                     System.out.println("Successfully created new user: " + user.getEmail());
@@ -88,7 +81,6 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                     System.out.println("Create user failed: " + createException.getMessage());
                     createException.printStackTrace();
                     try {
-                        // Try to find user again (maybe it was created by another thread)
                         user = userService.findByEmail(email);
                         System.out.println("Found user after failed creation: " + user.getEmail());
                         user = userService.mergeUserWithOAuth2Info(user, providerId, provider, picture);
@@ -111,18 +103,5 @@ public class OAuth2ServiceImpl implements OAuth2Service {
             e.printStackTrace();
             throw e;
         }
-    }
-
-    private String generateUsername(String email) {
-        String baseUsername = email.split("@")[0];
-        String username = baseUsername;
-        int counter = 1;
-        
-        while (userService.existsByUsername(username)) {
-            username = baseUsername + counter;
-            counter++;
-        }
-        
-        return username;
     }
 }

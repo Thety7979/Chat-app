@@ -18,6 +18,8 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthServiceImpl implements AuthService {
@@ -33,7 +35,6 @@ public class AuthServiceImpl implements AuthService {
     @Autowired
     private RefreshTokenService refreshTokenService;
 
-    // Simple password encoder using SHA-256
     private String encodePassword(String password) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -56,14 +57,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public AuthResponse authenticate(AuthRequest request) {
-        // Simple authentication
         User user = userService.findByEmail(request.getEmail());
         
         if (user == null || !matchesPassword(request.getPassword(), user.getPasswordHash())) {
-            throw new RuntimeException("Invalid email or password");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
         }
 
-        // Generate tokens
         String jwt = jwtService.generateToken(user.getEmail());
         String refreshToken = jwtService.generateRefreshToken(user.getEmail());
 
@@ -75,7 +74,6 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public AuthResponse signup(SignupRequest request) {
-        // Check if user already exists
         if (userService.existsByEmail(request.getEmail())) {
             throw new RuntimeException("User already exists with this email");
         }
@@ -84,7 +82,6 @@ public class AuthServiceImpl implements AuthService {
             throw new RuntimeException("Username already taken");
         }
 
-        // Create new user
         User user = User.builder()
             .email(request.getEmail())
             .username(request.getUsername())
@@ -99,7 +96,6 @@ public class AuthServiceImpl implements AuthService {
 
         user = userService.save(user);
 
-        // Generate tokens
         String jwt = jwtService.generateToken(user.getEmail());
         String refreshToken = jwtService.generateRefreshToken(user.getEmail());
 
@@ -113,10 +109,8 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse refreshToken(String refreshToken) {
         logger.info("Starting token refresh process");
         
-        // Debug the token first
         jwtService.debugToken(refreshToken);
-        
-        // First, try to validate the refresh token and get user from database
+
         User user = null;
         try {
             user = refreshTokenService.validateRefreshToken(refreshToken);
@@ -124,7 +118,6 @@ public class AuthServiceImpl implements AuthService {
         } catch (Exception e) {
             logger.warn("Failed to validate refresh token, trying alternative approach: {}", e.getMessage());
             
-            // Alternative approach: try to extract username from token
             String username = jwtService.extractUsername(refreshToken);
             if (username != null) {
                 user = userService.findByEmail(username);
@@ -140,22 +133,13 @@ public class AuthServiceImpl implements AuthService {
             }
         }
         
-        if (user == null) {
-            throw new RuntimeException("Unable to determine user from refresh token");
-        }
-        
         String newJwt = jwtService.generateToken(user.getEmail());
         UserDTO userDTO = convertToDTO(user);
 
-        // Use the new transaction approach to avoid rollback issues
         String actualNewRefreshToken = refreshTokenService.refreshTokenInNewTransaction(refreshToken, user);
         
-        // Cleanup old tokens in a separate operation (non-blocking) - don't let it affect the main transaction
         cleanupOldTokensAsync(refreshToken, actualNewRefreshToken, user);
-        
         logger.info("Token refresh completed successfully for user: {}", user.getEmail());
-        
-        // Return the actual new token that was created
         return new AuthResponse(newJwt, actualNewRefreshToken, "Bearer", 86400000L, userDTO);
     }
 
@@ -165,10 +149,9 @@ public class AuthServiceImpl implements AuthService {
     }
     
     private void cleanupOldTokensAsync(String oldToken, String newToken, User user) {
-        // Run cleanup in a separate thread to avoid transaction issues
         new Thread(() -> {
             try {
-                Thread.sleep(100); // Small delay to ensure main transaction completes
+                Thread.sleep(100);
                 refreshTokenService.cleanupOldTokens(oldToken, newToken, user);
             } catch (Exception e) {
                 logger.warn("Failed to cleanup old tokens asynchronously: {}", e.getMessage());

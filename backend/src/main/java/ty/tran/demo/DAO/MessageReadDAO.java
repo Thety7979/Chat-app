@@ -13,16 +13,18 @@ import java.util.UUID;
 
 @Repository
 public interface MessageReadDAO extends JpaRepository<MessageRead, MessageReadId> {
-    
+
     @Query("SELECT mr FROM MessageRead mr WHERE mr.message.conversation.id = :conversationId AND mr.user.id = :userId")
-    List<MessageRead> findByConversationIdAndUserId(@Param("conversationId") UUID conversationId, @Param("userId") UUID userId);
-    
+    List<MessageRead> findByConversationIdAndUserId(@Param("conversationId") UUID conversationId,
+            @Param("userId") UUID userId);
+
     @Query("SELECT mr FROM MessageRead mr WHERE mr.message.id = :messageId")
     List<MessageRead> findByMessageId(@Param("messageId") UUID messageId);
-    
+
     @Query("SELECT mr FROM MessageRead mr WHERE mr.message.conversation.id = :conversationId AND mr.readAt > :after")
-    List<MessageRead> findReadMessagesAfter(@Param("conversationId") UUID conversationId, @Param("after") Instant after);
-    
+    List<MessageRead> findReadMessagesAfter(@Param("conversationId") UUID conversationId,
+            @Param("after") Instant after);
+
     @Query("SELECT COUNT(mr) FROM MessageRead mr WHERE mr.message.conversation.id = :conversationId AND mr.user.id = :userId")
     long countReadMessagesByUser(@Param("conversationId") UUID conversationId, @Param("userId") UUID userId);
 }

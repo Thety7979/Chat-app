@@ -4,7 +4,8 @@ Modern real‑time chat and calling app built with Spring Boot (backend) and Rea
 
 ### Preview
 
-<img width="1919" height="869" alt="image" src="https://github.com/user-attachments/assets/4b51ce5e-c714-4e61-875d-191aeb0137ab" />
+<img width="1919" height="861" alt="image" src="https://github.com/user-attachments/assets/5969e97d-c1e7-4936-91b5-7f58847c33a7" />
+
 
 <img width="1919" height="867" alt="image" src="https://github.com/user-attachments/assets/e8eecb26-68a0-4f65-b41b-9393cf8ebdb9" />
 

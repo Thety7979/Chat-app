@@ -1,4 +1,4 @@
-package ty.tran.demo.Service;
+package ty.tran.demo.Services;
 
 import ty.tran.demo.DTO.AuthResponse;
 import ty.tran.demo.Entity.User;

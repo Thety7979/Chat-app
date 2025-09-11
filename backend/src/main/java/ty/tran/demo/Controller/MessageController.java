@@ -12,8 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import ty.tran.demo.DTO.MessageDTO;
 import ty.tran.demo.DTO.SendMessageRequest;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.MessageService;
-
+import ty.tran.demo.Services.MessageService;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;

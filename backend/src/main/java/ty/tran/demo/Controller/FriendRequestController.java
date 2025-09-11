@@ -8,7 +8,7 @@ import ty.tran.demo.DTO.FriendRequestDTO;
 import ty.tran.demo.DTO.RespondFriendRequestDTO;
 import ty.tran.demo.DTO.SendFriendRequestDTO;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.FriendRequestService;
+import ty.tran.demo.Services.FriendRequestService;
 
 import java.util.List;
 import java.util.UUID;

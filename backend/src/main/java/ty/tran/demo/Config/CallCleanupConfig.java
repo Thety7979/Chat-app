@@ -2,9 +2,10 @@ package ty.tran.demo.Config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import ty.tran.demo.Services.CallService;
+
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import ty.tran.demo.Service.CallService;
 
 @Component
 @RequiredArgsConstructor

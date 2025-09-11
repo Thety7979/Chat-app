@@ -1,12 +1,12 @@
-package ty.tran.demo.Impl;
+package ty.tran.demo.Implements;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import ty.tran.demo.DAO.RefreshTokenDAO;
 import ty.tran.demo.Entity.RefreshToken;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.RefreshTokenService;
-import ty.tran.demo.Service.JwtService;
+import ty.tran.demo.Services.JwtService;
+import ty.tran.demo.Services.RefreshTokenService;
 
 import java.time.Instant;
 import org.slf4j.Logger;

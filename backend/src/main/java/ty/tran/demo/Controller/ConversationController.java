@@ -8,8 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import ty.tran.demo.DTO.ConversationDTO;
 import ty.tran.demo.DTO.CreateConversationRequest;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.ConversationService;
-
+import ty.tran.demo.Services.ConversationService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;

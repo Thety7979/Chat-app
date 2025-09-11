@@ -2,10 +2,11 @@ import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import ThreeDBackground from './ThreeDBackground';
+import LottieAnimation from './LottieAnimation';
 import { useAuth } from '../contexts/AuthContext';
 import { SignupRequest } from '../api/authApi';
 import authApi from '../api/authApi';
-import { GOOGLE_OAUTH2_CONFIG, FACEBOOK_OAUTH2_CONFIG } from '../config/oauth2';
+import { GOOGLE_OAUTH2_CONFIG } from '../config/oauth2';
 
 const AnimatedSignUpPage: React.FC = () => {
   const { login, signup, isLoading: authLoading, error: authError, clearError, isAuthenticated } = useAuth();
@@ -20,6 +21,7 @@ const AnimatedSignUpPage: React.FC = () => {
   const [isLoginMode, setIsLoginMode] = useState<boolean>(true);
   const [emailValidated, setEmailValidated] = useState<boolean>(false);
   const [isCheckingEmail, setIsCheckingEmail] = useState<boolean>(false);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -138,19 +140,7 @@ const AnimatedSignUpPage: React.FC = () => {
     }
   };
 
-  const handleFacebookOAuth2 = async (): Promise<void> => {
-    setIsLoading(true);
-    try {
-      const facebookAuthUrl = `${FACEBOOK_OAUTH2_CONFIG.authUrl}?client_id=${FACEBOOK_OAUTH2_CONFIG.clientId}&redirect_uri=${encodeURIComponent(FACEBOOK_OAUTH2_CONFIG.redirectUri)}&scope=${encodeURIComponent(FACEBOOK_OAUTH2_CONFIG.scope)}&response_type=code&state=${Math.random().toString(36).substring(7)}`;
-
-      window.location.href = facebookAuthUrl;
-    } catch (error) {
-      console.error('Facebook OAuth2 error:', error);
-      (window as any).showToast('Facebook login thất bại. Vui lòng thử lại.', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  
 
   const handleEmailChange = (e: ChangeEvent<HTMLInputElement>): void => {
     setEmail(e.target.value);
@@ -255,16 +245,16 @@ const AnimatedSignUpPage: React.FC = () => {
     <>
       <ThreeDBackground />
 
-      <div className="min-h-screen flex items-center justify-center relative z-10 bg-white">
+      <div className="h-screen overflow-hidden relative z-10 bg-gradient-to-br from-white via-purple-50 to-teal-50">
         <motion.div
-          className="w-full h-full flex flex-col md:flex-row bg-white/90 backdrop-blur-sm"
+          className="relative w-full min-h-screen"
           variants={containerVariants}
           initial="hidden"
           animate="visible"
         >
-          {/* Left side */}
+          {/* Fullscreen decorative layer */}
           <motion.div
-            className="relative bg-gradient-to-br from-accent to-purple-100 flex-1 p-10 md:p-16 flex flex-col justify-between"
+            className="absolute inset-0 bg-gradient-to-br from-accent to-purple-100 p-10 md:p-16 pointer-events-none overflow-hidden"
             variants={itemVariants}
           >
             {/* Simplified animated shapes - reduced for better performance */}
@@ -367,27 +357,64 @@ const AnimatedSignUpPage: React.FC = () => {
               </motion.div>
             </motion.div>
 
-            {/* Text */}
+            {/* Hero heading (VI) */}
             <motion.h2
-              className="mt-12 text-primary text-3xl font-semibold max-w-xs leading-snug"
+              className="mt-12 text-gray-900 text-4xl md:text-5xl font-extrabold max-w-xl leading-tight tracking-tight"
               variants={itemVariants}
             >
-              Building Bridges, Connecting Communities
+              Kết nối mọi người,
+              <br className="hidden md:block" />
+              Xây dựng cộng đồng
             </motion.h2>
+
+            {/* Extra Lottie chat visuals around hero */}
+            <motion.div
+              className="absolute md:left-8 md:top-64 left-4 top-72 opacity-70"
+              animate={{ y: [0, -8, 0] }}
+              transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <LottieAnimation type="loading" size={110} />
+            </motion.div>
+
+            <motion.div
+              className="absolute md:left-72 md:top-40 left-40 top-40 opacity-60"
+              animate={{ y: [0, 10, 0] }}
+              transition={{ duration: 8, repeat: Infinity, ease: "easeInOut", delay: 0.8 }}
+            >
+              <LottieAnimation type="loading" size={90} />
+            </motion.div>
+
+            {/* Lottie 3D chat visuals */}
+            <motion.div
+              className="absolute -bottom-6 left-6 opacity-70"
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <LottieAnimation type="loading" size={160} />
+            </motion.div>
+
+            <motion.div
+              className="absolute top-24 right-10 opacity-60"
+              animate={{ y: [0, 12, 0] }}
+              transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+            >
+              <LottieAnimation type="loading" size={120} />
+            </motion.div>
+ 
           </motion.div>
 
-          {/* Right side */}
+          {/* Foreground form overlay */}
           <motion.div
-            className="flex-1 bg-white/80 backdrop-blur-sm p-10 md:p-16 flex flex-col items-center"
+            className="relative z-10 h-screen flex items-center justify-center md:justify-end p-6 md:p-16 overflow-visible"
             variants={itemVariants}
           >
-            <div className="max-w-md w-full">
+            <div className="max-w-md w-full rounded-2xl bg-white/20 backdrop-blur-2xl border border-white/30 ring-1 ring-white/20 shadow-xl p-5 md:p-7 md:mr-8 lg:mr-20">
               <motion.div
-                className="flex justify-center mb-6"
+                className="flex justify-between items-center mb-6"
                 variants={itemVariants}
               >
                 <motion.div
-                  className="bg-secondary rounded-full p-3"
+                  className="bg-secondary rounded-full p-3 shadow-md"
                   animate={{
                     scale: [1, 1.05, 1]
                   }}
@@ -399,14 +426,26 @@ const AnimatedSignUpPage: React.FC = () => {
                 >
                   <i className="fas fa-comment-dots text-white text-xl"></i>
                 </motion.div>
+
+                {/* 3D floating chat bubble */}
+                <motion.div style={{ perspective: 800 }} className="hidden md:block">
+                  <motion.div
+                    className="w-12 h-12 rounded-full grid place-items-center bg-gradient-to-br from-primary to-accent shadow-xl"
+                    animate={{ rotateY: [0, 20, 0, -20, 0], rotateX: [0, 10, 0, -10, 0] }}
+                    transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+                    style={{ transformStyle: 'preserve-3d' }}
+                  >
+                    <i className="fas fa-comment text-white"></i>
+                  </motion.div>
+                </motion.div>
+
+                {/* Secondary Lottie by form card */}
+                <div className="hidden md:block ml-3">
+                  <LottieAnimation type="loading" size={48} />
+                </div>
               </motion.div>
 
-              <motion.h3
-                className="text-center font-semibold text-lg mb-8"
-                variants={itemVariants}
-              >
-                {isLoginMode ? 'Welcome back!' : 'Nice to see you!'}
-              </motion.h3>
+              {/* Removed welcome text as requested */}
 
               {/* Error Display */}
               {authError && (
@@ -422,7 +461,7 @@ const AnimatedSignUpPage: React.FC = () => {
 
               {/* Social Sign Up Buttons */}
               <motion.button
-                className="w-full mb-4 py-3 border border-google-red rounded-lg text-google-red font-medium flex items-center justify-center gap-2 hover:bg-accent transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full mb-4 py-3 border border-google-red/60 rounded-lg text-google-red font-medium flex items-center justify-center gap-2 hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 type="button"
                 onClick={handleGoogleOAuth2}
                 disabled={isLoading || authLoading}
@@ -431,28 +470,17 @@ const AnimatedSignUpPage: React.FC = () => {
                 whileTap="tap"
               >
                 <i className="fab fa-google"></i>
-                {isLoading || authLoading ? 'Processing...' : `${isLoginMode ? 'Sign in' : 'Sign up'} with Google`}
+                {isLoading || authLoading ? 'Đang xử lý...' : 'Đăng nhập bằng Google'}
               </motion.button>
 
-              <motion.button
-                className="w-full mb-6 py-3 border border-facebook-blue rounded-lg text-facebook-blue font-medium flex items-center justify-center gap-2 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                type="button"
-                onClick={handleFacebookOAuth2}
-                disabled={isLoading || authLoading}
-                variants={buttonVariants}
-                whileHover="hover"
-                whileTap="tap"
-              >
-                <i className="fab fa-facebook-f"></i>
-                {isLoading || authLoading ? 'Processing...' : `${isLoginMode ? 'Sign in' : 'Sign up'} with Facebook`}
-              </motion.button>
+              
 
               <motion.div
                 className="flex items-center mb-6"
                 variants={itemVariants}
               >
                 <hr className="flex-grow border-t border-border-gray" />
-                <span className="mx-3 text-xs text-text-gray font-semibold">OR</span>
+                <span className="mx-3 text-[10px] tracking-wider text-text-gray font-semibold">HOẶC</span>
                 <hr className="flex-grow border-t border-border-gray" />
               </motion.div>
 
@@ -468,25 +496,28 @@ const AnimatedSignUpPage: React.FC = () => {
                     exit="exit"
                   >
                     <motion.label
-                      className="block mb-2 text-sm text-text-gray font-normal"
+                      className="block mb-2 text-xs text-text-gray font-medium tracking-wide"
                       htmlFor="email"
                       variants={itemVariants}
                     >
-                      {isLoginMode ? 'Sign in with your email' : 'Sign up with your email'}
+                      Đăng nhập bằng email của bạn
                     </motion.label>
 
                     <motion.div className="relative mb-4" variants={itemVariants}>
                       <input
-                        className={`w-full py-3 px-4 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition ${
+                        className={`w-full py-3 pl-11 pr-4 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition ${
                           emailValidated ? 'ring-2 ring-green-500' : ''
                         }`}
                         id="email"
-                        placeholder="email@gmail.com"
+                        placeholder="email@example.com"
                         type="email"
                         value={email}
                         onChange={handleEmailChange}
                         required
                       />
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center text-text-gray/70">
+                        <i className="far fa-envelope"></i>
+                      </div>
                       {isCheckingEmail && (
                         <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
@@ -511,21 +542,31 @@ const AnimatedSignUpPage: React.FC = () => {
                     {/* Additional fields for signup */}
                     {!isLoginMode && (
                       <>
-                        <motion.input
-                          className="w-full mb-4 py-3 px-4 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition"
-                          placeholder="Username (optional)"
-                          type="text"
-                          value={username}
-                          onChange={handleUsernameChange}
-                        />
+                        <motion.div className="relative mb-4" variants={itemVariants}>
+                          <input
+                            className="w-full py-3 pl-11 pr-4 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition"
+                            placeholder="Username (optional)"
+                            type="text"
+                            value={username}
+                            onChange={handleUsernameChange}
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center text-text-gray/70">
+                            <i className="far fa-user"></i>
+                          </div>
+                        </motion.div>
 
-                        <motion.input
-                          className="w-full mb-4 py-3 px-4 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition"
-                          placeholder="Full Name (optional)"
-                          type="text"
-                          value={fullName}
-                          onChange={handleFullNameChange}
-                        />
+                        <motion.div className="relative mb-4" variants={itemVariants}>
+                          <input
+                            className="w-full py-3 pl-11 pr-4 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition"
+                            placeholder="Full Name (optional)"
+                            type="text"
+                            value={fullName}
+                            onChange={handleFullNameChange}
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center text-text-gray/70">
+                            <i className="far fa-id-card"></i>
+                          </div>
+                        </motion.div>
                       </>
                     )}
 
@@ -553,7 +594,7 @@ const AnimatedSignUpPage: React.FC = () => {
                       whileHover="hover"
                       whileTap="tap"
                     >
-                      {isLoading || authLoading ? 'Processing...' : 'Continue'}
+                      {isLoading || authLoading ? 'Đang xử lý...' : 'Tiếp tục'}
                     </motion.button>
                   </motion.form>
                 ) : (
@@ -570,18 +611,31 @@ const AnimatedSignUpPage: React.FC = () => {
                       htmlFor="password"
                       variants={itemVariants}
                     >
-                      Enter your password
+                      Nhập mật khẩu của bạn
                     </motion.label>
 
-                    <motion.input
-                      className="w-full mb-4 py-3 px-4 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition"
-                      id="password"
-                      placeholder="Enter your password"
-                      type="password"
-                      value={password}
-                      onChange={handlePasswordChange}
-                      required
-                    />
+                    <motion.div className="relative mb-4" variants={itemVariants}>
+                      <input
+                        className="w-full py-3 px-4 pr-12 rounded-lg bg-light-gray placeholder:text-text-gray text-text-gray focus:outline-none focus:ring-2 focus:ring-primary transition"
+                        id="password"
+                        placeholder="Enter your password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={handlePasswordChange}
+                        required
+                      />
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center text-text-gray/70">
+                        <i className="far fa-lock"></i>
+                      </div>
+                      <button
+                        type="button"
+                        className="absolute inset-y-0 right-0 px-3 flex items-center text-text-gray hover:text-primary"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        <i className={`far ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                      </button>
+                    </motion.div>
 
                     <motion.button
                       className="w-full py-3 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -591,7 +645,7 @@ const AnimatedSignUpPage: React.FC = () => {
                       whileHover="hover"
                       whileTap="tap"
                     >
-                      {isLoading || authLoading ? 'Processing...' : (isLoginMode ? 'Sign In' : 'Sign Up')}
+                      {isLoading || authLoading ? 'Đang xử lý...' : (isLoginMode ? 'Đăng nhập' : 'Đăng ký')}
                     </motion.button>
                   </motion.form>
                 )}

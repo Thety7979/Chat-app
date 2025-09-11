@@ -1,0 +1,59 @@
+{
+  "properties": [
+    {
+      "name": "jwt.secret",
+      "type": "java.lang.String",
+      "description": "Secret key for signing JWT tokens"
+    },
+    {
+      "name": "jwt.expiration",
+      "type": "java.lang.Long",
+      "description": "JWT access token expiration time in milliseconds"
+    },
+    {
+      "name": "jwt.refresh-expiration",
+      "type": "java.lang.Long",
+      "description": "JWT refresh token expiration time in milliseconds"
+    },
+    {
+      "name": "google.oauth2.client-id",
+      "type": "java.lang.String",
+      "description": "Google OAuth2 client ID"
+    },
+    {
+      "name": "google.oauth2.client-secret",
+      "type": "java.lang.String",
+      "description": "Google OAuth2 client secret"
+    },
+    {
+      "name": "google.oauth2.redirect-uri",
+      "type": "java.lang.String",
+      "description": "Google OAuth2 redirect URI"
+    },
+    {
+      "name": "spring.websocket.sockjs.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Enable SockJS support for WebSocket"
+    },
+    {
+      "name": "spring.websocket.sockjs.path",
+      "type": "java.lang.String",
+      "description": "SockJS endpoint path"
+    },
+    {
+      "name": "spring.websocket.sockjs.allowed-origins",
+      "type": "java.lang.String",
+      "description": "Allowed origins for SockJS connections"
+    },
+    {
+      "name": "spring.websocket.stomp.broker.relay.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Enable STOMP broker relay"
+    },
+    {
+      "name": "spring.websocket.stomp.broker.simple.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Enable simple STOMP broker"
+    }
+  ]
+}

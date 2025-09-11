@@ -1,4 +1,4 @@
-package ty.tran.demo.Impl;
+package ty.tran.demo.Implements;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -8,10 +8,10 @@ import ty.tran.demo.DTO.SignupRequest;
 import ty.tran.demo.DTO.UserDTO;
 import ty.tran.demo.Entity.User;
 import ty.tran.demo.Entity.User.AuthProvider;
-import ty.tran.demo.Service.AuthService;
-import ty.tran.demo.Service.JwtService;
-import ty.tran.demo.Service.RefreshTokenService;
-import ty.tran.demo.Service.UserService;
+import ty.tran.demo.Services.AuthService;
+import ty.tran.demo.Services.JwtService;
+import ty.tran.demo.Services.RefreshTokenService;
+import ty.tran.demo.Services.UserService;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;

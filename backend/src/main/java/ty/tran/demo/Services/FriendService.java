@@ -1,4 +1,4 @@
-package ty.tran.demo.Service;
+package ty.tran.demo.Services;
 
 import ty.tran.demo.DTO.SearchUserDTO;
 import ty.tran.demo.DTO.UserDTO;

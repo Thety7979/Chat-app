@@ -13,8 +13,8 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
 import ty.tran.demo.DTO.SendMessageRequest;
-import ty.tran.demo.Service.MessageService;
-import ty.tran.demo.Service.ConversationService;
+import ty.tran.demo.Services.ConversationService;
+import ty.tran.demo.Services.MessageService;
 
 import java.util.UUID;
 

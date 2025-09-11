@@ -1,11 +1,11 @@
-package ty.tran.demo.Impl;
+package ty.tran.demo.Implements;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ty.tran.demo.DAO.UserDAO;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.UserService;
+import ty.tran.demo.Services.UserService;
 
 @Service
 @Transactional

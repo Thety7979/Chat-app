@@ -137,7 +137,7 @@ const FriendsList: React.FC<FriendsListProps> = ({ onSelectFriend, onFriendRemov
             >
               <div className="relative">
                 <img
-                  src={friend.avatarUrl || 'https://via.placeholder.com/48x48/3b82f6/ffffff?text=U'}
+                  src={friend.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(friend.displayName || friend.email) + '&background=3b82f6&color=ffffff&size=48'}
                   alt={friend.displayName || friend.email}
                   className="w-12 h-12 rounded-full object-cover"
                 />

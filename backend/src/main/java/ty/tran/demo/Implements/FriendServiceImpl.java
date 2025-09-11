@@ -1,4 +1,4 @@
-package ty.tran.demo.Impl;
+package ty.tran.demo.Implements;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -9,7 +9,7 @@ import ty.tran.demo.DTO.SearchUserDTO;
 import ty.tran.demo.DTO.UserDTO;
 import ty.tran.demo.Entity.Friendship;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.FriendService;
+import ty.tran.demo.Services.FriendService;
 
 import java.util.List;
 import java.util.UUID;

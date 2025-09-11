@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.*;
 import ty.tran.demo.DTO.SearchUserDTO;
 import ty.tran.demo.DTO.UserDTO;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.FriendService;
+import ty.tran.demo.Services.FriendService;
 
 import java.util.List;
 import java.util.UUID;

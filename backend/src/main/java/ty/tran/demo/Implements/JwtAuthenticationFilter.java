@@ -1,4 +1,4 @@
-package ty.tran.demo.Impl;
+package ty.tran.demo.Implements;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import ty.tran.demo.DAO.UserDAO;
 import ty.tran.demo.Entity.User;
-import ty.tran.demo.Service.JwtService;
+import ty.tran.demo.Services.JwtService;
 
 import java.util.Collections;
 

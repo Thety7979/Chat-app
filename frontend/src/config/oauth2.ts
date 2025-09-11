@@ -7,18 +7,13 @@ export const GOOGLE_OAUTH2_CONFIG = {
   userInfoUrl: 'https://www.googleapis.com/oauth2/v2/userinfo'
 };
 
-export const FACEBOOK_OAUTH2_CONFIG = {
-  clientId: 'your-facebook-app-id',
-  redirectUri: 'http://localhost:8080/api/oauth2/callback/facebook',
-  scope: 'email public_profile',
-  authUrl: 'https://www.facebook.com/v18.0/dialog/oauth',
-  tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token',
-  userInfoUrl: 'https://graph.facebook.com/v18.0/me'
-};
+export const buildOAuth2Url = (provider: 'google') => {
+  const config = provider === 'google' ? GOOGLE_OAUTH2_CONFIG : null;
 
-export const buildOAuth2Url = (provider: 'google' | 'facebook') => {
-  const config = provider === 'google' ? GOOGLE_OAUTH2_CONFIG : FACEBOOK_OAUTH2_CONFIG;
-  
+  if (!config) {
+    throw new Error(`Unsupported OAuth2 provider: ${provider}`);
+  }
+
   const params = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,

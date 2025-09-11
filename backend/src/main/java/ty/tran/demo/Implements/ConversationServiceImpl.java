@@ -1,4 +1,4 @@
-package ty.tran.demo.Impl;
+package ty.tran.demo.Implements;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,7 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ty.tran.demo.DAO.*;
 import ty.tran.demo.DTO.*;
 import ty.tran.demo.Entity.*;
-import ty.tran.demo.Service.ConversationService;
+import ty.tran.demo.Services.ConversationService;
 
 import java.time.Instant;
 import java.util.List;

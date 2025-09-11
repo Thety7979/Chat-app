@@ -1,4 +1,4 @@
-package ty.tran.demo.Service;
+package ty.tran.demo.Services;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

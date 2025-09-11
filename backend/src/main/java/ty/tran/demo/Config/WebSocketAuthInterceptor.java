@@ -10,9 +10,10 @@ import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.lang.NonNull;
-import ty.tran.demo.Service.JwtService;
+
 import ty.tran.demo.DAO.UserDAO;
 import ty.tran.demo.Entity.User;
+import ty.tran.demo.Services.JwtService;
 
 import java.util.Map;
 import java.util.UUID;

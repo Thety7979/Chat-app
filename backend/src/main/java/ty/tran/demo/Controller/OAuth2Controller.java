@@ -5,11 +5,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
-import ty.tran.demo.Service.OAuth2Service;
-import ty.tran.demo.Service.JwtService;
+
 import ty.tran.demo.DTO.AuthResponse;
 import ty.tran.demo.DTO.UserDTO;
 import ty.tran.demo.Entity.User;
+import ty.tran.demo.Services.JwtService;
+import ty.tran.demo.Services.OAuth2Service;
 
 import java.util.Map;
 import java.util.HashMap;

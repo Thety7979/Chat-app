@@ -6,8 +6,8 @@ import org.springframework.web.bind.annotation.*;
 import ty.tran.demo.DTO.AuthRequest;
 import ty.tran.demo.DTO.AuthResponse;
 import ty.tran.demo.DTO.SignupRequest;
-import ty.tran.demo.Service.AuthService;
-import ty.tran.demo.Service.OAuth2Service;
+import ty.tran.demo.Services.AuthService;
+import ty.tran.demo.Services.OAuth2Service;
 
 import java.util.HashMap;
 import java.util.Map;

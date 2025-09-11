@@ -1,4 +1,4 @@
-package ty.tran.demo.Impl;
+package ty.tran.demo.Implements;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +14,7 @@ import ty.tran.demo.DAO.UserDAO;
 import ty.tran.demo.DTO.CallDTO;
 import ty.tran.demo.Entity.Call;
 import ty.tran.demo.Entity.Conversation;
-import ty.tran.demo.Service.CallService;
+import ty.tran.demo.Services.CallService;
 
 import java.time.Instant;
 import java.util.List;

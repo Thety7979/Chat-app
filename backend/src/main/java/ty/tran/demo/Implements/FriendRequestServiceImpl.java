@@ -151,10 +151,12 @@ public class FriendRequestServiceImpl implements FriendRequestService {
     }
 
     private void createFriendship(UUID user1Id, UUID user2Id) {
-        // Tạo friendship 2 chiều
+        UUID smallerUserId = user1Id.compareTo(user2Id) < 0 ? user1Id : user2Id;
+        UUID largerUserId = user1Id.compareTo(user2Id) < 0 ? user2Id : user1Id;
+        
         Friendship friendship = Friendship.builder()
-                .user1(userDAO.findById(user1Id).orElseThrow())
-                .user2(userDAO.findById(user2Id).orElseThrow())
+                .user1(userDAO.findById(smallerUserId).orElseThrow())
+                .user2(userDAO.findById(largerUserId).orElseThrow())
                 .createdAt(Instant.now())
                 .build();
         

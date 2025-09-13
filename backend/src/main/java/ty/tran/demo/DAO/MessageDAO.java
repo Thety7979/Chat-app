@@ -3,9 +3,11 @@ package ty.tran.demo.DAO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import ty.tran.demo.Entity.Message;
 
 import java.time.Instant;
@@ -38,4 +40,9 @@ public interface MessageDAO extends JpaRepository<Message, UUID> {
             @Param("senderId") UUID senderId,
             @Param("content") String content,
             @Param("after") Instant after);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM Message m WHERE m.conversation.id = :conversationId")
+    void deleteByConversationId(@Param("conversationId") UUID conversationId);
 }

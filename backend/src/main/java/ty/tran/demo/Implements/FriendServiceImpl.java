@@ -3,12 +3,10 @@ package ty.tran.demo.Implements;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ty.tran.demo.DAO.FriendshipDAO;
-import ty.tran.demo.DAO.UserDAO;
+import ty.tran.demo.DAO.*;
 import ty.tran.demo.DTO.SearchUserDTO;
 import ty.tran.demo.DTO.UserDTO;
-import ty.tran.demo.Entity.Friendship;
-import ty.tran.demo.Entity.User;
+import ty.tran.demo.Entity.*;
 import ty.tran.demo.Services.FriendService;
 
 import java.util.List;
@@ -22,6 +20,11 @@ public class FriendServiceImpl implements FriendService {
 
     private final FriendshipDAO friendshipDAO;
     private final UserDAO userDAO;
+    private final ConversationDAO conversationDAO;
+    private final DirectConversationDAO directConversationDAO;
+    private final ConversationMemberDAO conversationMemberDAO;
+    private final MessageDAO messageDAO;
+    private final CallDAO callDAO;
 
     @Override
     @Transactional(readOnly = true)
@@ -78,7 +81,34 @@ public class FriendServiceImpl implements FriendService {
     @Override
     public void removeFriend(UUID userId, UUID friendId) {
         friendshipDAO.findFriendshipBetweenUsers(userId, friendId)
-                .ifPresent(friendshipDAO::delete);
+                .ifPresent(friendship -> {
+                    deleteAllRelatedData(userId, friendId);
+                    friendshipDAO.delete(friendship);
+                });
+    }
+
+    private void deleteAllRelatedData(UUID user1Id, UUID user2Id) {
+        try {
+            conversationDAO.findDirectConversationBetweenUsers(user1Id, user2Id)
+                    .ifPresent(directConversation -> {
+                        UUID conversationId = directConversation.getId();
+                        
+                        messageDAO.deleteByConversationId(conversationId);
+                        
+                        callDAO.deleteByConversationId(conversationId);
+                        
+                        conversationMemberDAO.deleteByConversationId(conversationId);
+                        
+                        directConversationDAO.deleteById(conversationId);
+                        
+                        conversationDAO.delete(directConversation);
+                        
+                        System.out.println("Successfully deleted all data for direct conversation between users: " + user1Id + " and " + user2Id);
+                    });
+        } catch (Exception e) {
+            System.err.println("Error deleting related data for users " + user1Id + " and " + user2Id + ": " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     @Override
